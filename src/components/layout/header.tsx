@@ -71,7 +71,7 @@ export default function Header() {
         {/* Notifications for medical staff - FIXED: Added proper button type */}
         {(user?.role === 'doctor' || user?.role === 'admin') && (
           <div className="relative">
-            <button 
+            <button
               type="button"
               className="p-2 rounded-lg hover:bg-muted transition-colors"
             >

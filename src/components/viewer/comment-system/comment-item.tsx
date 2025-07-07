@@ -1,4 +1,4 @@
-// components/viewer/comment-system/comment-item.tsx - UPDATED with existing auth
+// components/viewer/comment-system/comment-item.tsx - UPDATED with better layout
 'use client';
 import {
   Brain,
@@ -16,8 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RoleBadge } from '@/components/ui/role-badge';
 import { Textarea } from '@/components/ui/text-area';
-import { useRBAC } from '@/hooks/use-rbac'; // Updated import
-import type { Comment } from '@/types/auth'; // Updated import
+import { useRBAC } from '@/hooks/use-rbac';
+import type { Comment } from '@/types/auth';
 
 interface CommentItemProps {
   comment: Comment;
@@ -33,7 +33,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   onEdit,
   onDelete,
 }) => {
-  const { user, permissions } = useRBAC(); // Updated hook
+  const { user, permissions } = useRBAC();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(comment.content);
 
@@ -96,9 +96,9 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   return (
     <div className="bg-gray-700 rounded-lg p-3 space-y-3">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <Avatar className="h-8 w-8 flex-shrink-0">
             <AvatarFallback className="text-xs">
               {comment.author
                 .split(' ')
@@ -106,38 +106,45 @@ export const CommentItem: React.FC<CommentItemProps> = ({
                 .join('')}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-white text-sm">
                 {comment.author}
               </span>
-              <RoleBadge role={comment.role as UserRole} className="text-xs" />
+              <RoleBadge
+                role={comment.role as UserRole}
+                className="text-xs flex-shrink-0"
+              />
             </div>
             <p className="text-xs text-gray-400">{comment.timestamp}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 flex-shrink-0">
           {getCommentIcon(comment.type)}
-          <Badge
-            variant="outline"
-            className={`text-xs ${getCommentTypeColor(comment.type)}`}
-          >
-            {comment.type}
-          </Badge>
-          {comment.isPrivate && (
-            <Badge
-              variant="outline"
-              className="text-xs bg-yellow-100 text-yellow-800 border-yellow-200"
-            >
-              Private
-            </Badge>
-          )}
         </div>
       </div>
 
+      {/* Badges Row */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge
+          variant="outline"
+          className={`text-xs ${getCommentTypeColor(comment.type)}`}
+        >
+          {comment.type}
+        </Badge>
+        {comment.isPrivate && (
+          <Badge
+            variant="outline"
+            className="text-xs bg-yellow-100 text-yellow-800 border-yellow-200"
+          >
+            Private
+          </Badge>
+        )}
+      </div>
+
       {/* Content */}
-      <div className="pl-11">
+      <div className="">
         {isEditing ? (
           <div className="space-y-2">
             <Textarea
@@ -165,7 +172,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
 
       {/* Position Info */}
       {comment.position && (
-        <div className="pl-11 text-xs text-gray-400">
+        <div className="text-xs text-gray-400">
           {comment.position.view} • Slice {comment.position.slice} • (
           {comment.position.x}, {comment.position.y})
         </div>
@@ -173,7 +180,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
 
       {/* Actions */}
       {(canEditComment || canDeleteComment) && !isEditing && (
-        <div className="pl-11 flex gap-2">
+        <div className="flex gap-2">
           {canEditComment && (
             <Button
               size="sm"

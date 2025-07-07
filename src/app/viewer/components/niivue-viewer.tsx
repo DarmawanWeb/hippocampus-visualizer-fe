@@ -1,11 +1,11 @@
-// app/dashboard/viewer/components/niivue-viewer.tsx - CLEAN FINAL VERSION
+// app/dashboard/viewer/components/niivue-viewer.tsx - FIXED VERSION
 'use client';
 
 import { Niivue } from '@niivue/niivue';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// Define proper types
+// Define proper types and interfaces
 interface Volume {
   url?: string;
   file?: File;
@@ -23,6 +23,22 @@ interface ExtendedVolume {
   originalCalMax?: number;
   originalGlobalMin?: number;
   originalGlobalMax?: number;
+}
+
+// Type for accessing Niivue methods safely
+interface NiivueInstance {
+  volumes?: (ExtendedVolume | Volume)[];
+  meshes?: unknown[];
+  opts?: {
+    dragMode?: number;
+  };
+  setOpacity?: (index: number, opacity: number) => void;
+  updateGLVolume?: () => void;
+  drawScene?: () => void;
+  setColormap?: (index: number, colormap: string) => void;
+  loadVolumes?: (volumes: Volume[]) => Promise<void>;
+  dispose?: () => void;
+  attachToCanvas?: (canvas: HTMLCanvasElement) => void;
 }
 
 interface NiiVueViewerProps {
@@ -57,10 +73,12 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
   className = 'w-full h-full',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const nvRef = useRef<Niivue | null>(null);
+  const nvRef = useRef<(Niivue & NiivueInstance) | null>(null);
   const mountedRef = useRef(true);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [internalOverlayOpacity, setInternalOverlayOpacity] = useState([overlayOpacity]);
+  const [internalOverlayOpacity, setInternalOverlayOpacity] = useState([
+    overlayOpacity,
+  ]);
   const [internalShowOverlay, setInternalShowOverlay] = useState(showOverlay);
 
   // Store previous values to prevent unnecessary updates
@@ -73,8 +91,8 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
       if (!nvRef.current || !isInitialized) return;
 
       try {
-        const nv = nvRef.current as any;
-        if (!nv.volumes || nv.volumes.length === 0) return;
+        const nv = nvRef.current;
+        if (!nv?.volumes || nv.volumes.length === 0) return;
 
         const vol = nv.volumes[0] as ExtendedVolume;
 
@@ -102,7 +120,10 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
           vol.cal_max = newCenter + newWidth / 2;
 
           // Ensure bounds
-          if (vol.originalGlobalMin !== undefined && vol.originalGlobalMax !== undefined) {
+          if (
+            vol.originalGlobalMin !== undefined &&
+            vol.originalGlobalMax !== undefined
+          ) {
             vol.cal_min = Math.max(vol.cal_min, vol.originalGlobalMin);
             vol.cal_max = Math.min(vol.cal_max, vol.originalGlobalMax);
           }
@@ -114,7 +135,7 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
           try {
             if (nv.setColormap) nv.setColormap(0, colormapVal);
           } catch (e) {
-            // Ignore setColormap errors
+            // console.warn('Failed to set colormap:', e);
           }
         }
 
@@ -122,7 +143,7 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
         if (nv.updateGLVolume) nv.updateGLVolume();
         if (nv.drawScene) nv.drawScene();
       } catch (error) {
-        // Ignore control errors
+        // console.warn('Error applying image controls:', error);
       }
     },
     [isInitialized],
@@ -130,15 +151,15 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
 
   // Handle overlay opacity updates
   const updateOverlayOpacity = useCallback((opacity: number) => {
-    if (nvRef.current) {
-      const nv = nvRef.current as any;
-      if (nv.volumes && nv.volumes.length > 1) {
-        try {
-          if (nv.setOpacity) nv.setOpacity(1, opacity);
-          if (nv.updateGLVolume) nv.updateGLVolume();
-        } catch (error) {
-          // Ignore opacity errors
-        }
+    if (!nvRef.current) return;
+
+    const nv = nvRef.current;
+    if (nv.volumes && nv.volumes.length > 1) {
+      try {
+        if (nv.setOpacity) nv.setOpacity(1, opacity);
+        if (nv.updateGLVolume) nv.updateGLVolume();
+      } catch (error) {
+        // console.warn('Error updating overlay opacity:', error);
       }
     }
   }, []);
@@ -151,13 +172,13 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
 
       try {
         onLoading?.(true);
-        
+
         // Cleanup existing viewer
         if (nvRef.current) {
           try {
-            (nvRef.current as any).dispose?.();
+            if (nvRef.current.dispose) nvRef.current.dispose();
           } catch (error) {
-            // Ignore cleanup errors
+            // console.warn('Error disposing viewer:', error);
           }
           nvRef.current = null;
           setIsInitialized(false);
@@ -191,7 +212,9 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
 
         // Add overlay if exists
         if (overlayFile || overlayUrl) {
-          const overlayOpacityValue = internalShowOverlay ? internalOverlayOpacity[0] : 0;
+          const overlayOpacityValue = internalShowOverlay
+            ? internalOverlayOpacity[0]
+            : 0;
 
           if (overlayFile) {
             volumeList.push({
@@ -212,26 +235,29 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
           throw new Error('No image to load');
         }
 
-        // Load volumes
-        await (nv as any).loadVolumes(volumeList);
+        // Load volumes - cast to any to access loadVolumes method
+        await (nv as Niivue & NiivueInstance).loadVolumes(volumeList);
 
         if (!mountedRef.current) return;
 
-        nvRef.current = nv;
+        // Store reference with type intersection
+        nvRef.current = nv as Niivue & NiivueInstance;
         setIsInitialized(true);
         onLoading?.(false);
       } catch (err) {
         if (mountedRef.current) {
           if (nvRef.current) {
             try {
-              (nvRef.current as any).dispose?.();
+              if (nvRef.current.dispose) nvRef.current.dispose();
             } catch (error) {
-              // Ignore cleanup errors
+              // console.warn('Error disposing viewer on error:', error);
             }
             nvRef.current = null;
             setIsInitialized(false);
           }
-          onError?.(err instanceof Error ? err.message : 'Failed to load image');
+          onError?.(
+            err instanceof Error ? err.message : 'Failed to load image',
+          );
           onLoading?.(false);
         }
       }
@@ -254,13 +280,13 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
   useEffect(() => {
     if (nvRef.current && isInitialized) {
       try {
-        const dragMode = activeTool === 'pan' ? 1 : activeTool === 'zoom' ? 3 : 1;
-        const nv = nvRef.current as any;
-        if (nv.opts) {
-          nv.opts.dragMode = dragMode;
+        const dragMode =
+          activeTool === 'pan' ? 1 : activeTool === 'zoom' ? 3 : 1;
+        if (nvRef.current.opts) {
+          nvRef.current.opts.dragMode = dragMode;
         }
       } catch (error) {
-        // Ignore drag mode errors
+        // console.warn('Error setting drag mode:', error);
       }
     }
   }, [activeTool, isInitialized]);
@@ -289,7 +315,13 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
         updateOverlayOpacity(overlayOpacity);
       }
     }
-  }, [overlayOpacity, isInitialized, internalShowOverlay, updateOverlayOpacity, internalOverlayOpacity]);
+  }, [
+    overlayOpacity,
+    isInitialized,
+    internalShowOverlay,
+    updateOverlayOpacity,
+    internalOverlayOpacity,
+  ]);
 
   useEffect(() => {
     if (showOverlay !== internalShowOverlay) {
@@ -298,22 +330,36 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
         updateOverlayOpacity(showOverlay ? internalOverlayOpacity[0] : 0);
       }
     }
-  }, [showOverlay, isInitialized, internalOverlayOpacity, updateOverlayOpacity, internalShowOverlay]);
+  }, [
+    showOverlay,
+    isInitialized,
+    internalOverlayOpacity,
+    updateOverlayOpacity,
+    internalShowOverlay,
+  ]);
 
   // Handle internal opacity changes
   useEffect(() => {
     if (isInitialized && internalShowOverlay) {
       updateOverlayOpacity(internalOverlayOpacity[0]);
     }
-  }, [internalOverlayOpacity, isInitialized, internalShowOverlay, updateOverlayOpacity]);
+  }, [
+    internalOverlayOpacity,
+    isInitialized,
+    internalShowOverlay,
+    updateOverlayOpacity,
+  ]);
 
   // Hot-swap overlay when overlay changes
   useEffect(() => {
-    const updateOverlay = async (newOverlayFile?: File | null, newOverlayUrl?: string) => {
+    const updateOverlay = async (
+      newOverlayFile?: File | null,
+      newOverlayUrl?: string,
+    ) => {
       if (!nvRef.current || !isInitialized) return;
 
       try {
-        const nv = nvRef.current as any;
+        const nv = nvRef.current;
 
         // Remove existing overlay
         if (nv.volumes && nv.volumes.length > 1) {
@@ -323,7 +369,9 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
 
         // Add new overlay if provided
         if (newOverlayFile || newOverlayUrl) {
-          const overlayOpacityValue = internalShowOverlay ? internalOverlayOpacity[0] : 0;
+          const overlayOpacityValue = internalShowOverlay
+            ? internalOverlayOpacity[0]
+            : 0;
 
           const overlayVolume: Volume = {
             opacity: overlayOpacityValue,
@@ -337,29 +385,46 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
           }
 
           try {
-            await nv.loadVolumes([overlayVolume]);
+            // Try to load just the overlay volume
+            if (nv.loadVolumes) {
+              await nv.loadVolumes([overlayVolume]);
+            }
           } catch (e) {
-            const currentVolumes = [...nv.volumes];
-            currentVolumes.push(overlayVolume);
-            await nv.loadVolumes(currentVolumes);
+            // If that fails, reload all volumes
+            // console.warn(
+            //   'Failed to load overlay alone, reloading all volumes:',
+            //   e,
+            // );
+            if (nv.volumes && nv.volumes.length > 0 && nv.loadVolumes) {
+              const currentVolumes = [...nv.volumes] as Volume[];
+              currentVolumes.push(overlayVolume);
+              await nv.loadVolumes(currentVolumes);
+            }
           }
         }
 
         if (nv.updateGLVolume) nv.updateGLVolume();
         if (nv.drawScene) nv.drawScene();
       } catch (error) {
-        // Ignore overlay errors
+        // console.warn('Error updating overlay:', error);
       }
     };
 
     const prev = prevOverlayRef.current;
-    const overlayChanged = prev.overlayFile !== overlayFile || prev.overlayUrl !== overlayUrl;
+    const overlayChanged =
+      prev.overlayFile !== overlayFile || prev.overlayUrl !== overlayUrl;
 
     if (overlayChanged && isInitialized) {
       updateOverlay(overlayFile, overlayUrl);
       prevOverlayRef.current = { overlayFile, overlayUrl };
     }
-  }, [overlayFile, overlayUrl, isInitialized, internalShowOverlay, internalOverlayOpacity]);
+  }, [
+    overlayFile,
+    overlayUrl,
+    isInitialized,
+    internalShowOverlay,
+    internalOverlayOpacity,
+  ]);
 
   // Mount/unmount
   useEffect(() => {
@@ -368,9 +433,9 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
       mountedRef.current = false;
       if (nvRef.current) {
         try {
-          (nvRef.current as any).dispose?.();
+          if (nvRef.current.dispose) nvRef.current.dispose();
         } catch (error) {
-          // Ignore cleanup errors
+          // console.warn('Error disposing viewer on unmount:', error);
         }
         nvRef.current = null;
       }
@@ -404,7 +469,9 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
       {/* Debug Info */}
       {isInitialized && process.env.NODE_ENV === 'development' && (
         <div className="absolute top-2 left-2 bg-black/70 text-white text-xs p-2 rounded z-20">
-          <div>B: {brightness}% | C: {contrast}% | {colormap}</div>
+          <div>
+            B: {brightness}% | C: {contrast}% | {colormap}
+          </div>
           <div>Tool: {activeTool || 'none'}</div>
         </div>
       )}

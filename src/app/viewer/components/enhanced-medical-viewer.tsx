@@ -145,10 +145,18 @@ const EnhancedMedicalViewer: React.FC = () => {
   const renderRoleBadge = (role: string, className?: string) => {
     const validRoles = ['admin', 'doctor', 'staff', 'patient'];
     if (validRoles.includes(role)) {
-      return <RoleBadge role={role as 'admin' | 'doctor' | 'staff' | 'patient'} className={className} />;
+      return (
+        <RoleBadge
+          role={role as 'admin' | 'doctor' | 'staff' | 'patient'}
+          className={className}
+        />
+      );
     }
     return (
-      <Badge variant="outline" className={`text-gray-600 border-gray-600 ${className || ''}`}>
+      <Badge
+        variant="outline"
+        className={`text-gray-600 border-gray-600 ${className || ''}`}
+      >
         {role}
       </Badge>
     );
@@ -297,11 +305,24 @@ const EnhancedMedicalViewer: React.FC = () => {
   );
 
   const handleCanvasClick = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
+    (
+      event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
+    ) => {
       if (activeTool === 'comment' || isAddingComment) {
-        const rect = event.currentTarget.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        let x: number, y: number;
+
+        if ('clientX' in event) {
+          // Mouse event
+          const rect = event.currentTarget.getBoundingClientRect();
+          x = event.clientX - rect.left;
+          y = event.clientY - rect.top;
+        } else {
+          // Keyboard event - place comment in center
+          const rect = event.currentTarget.getBoundingClientRect();
+          x = rect.width / 2;
+          y = rect.height / 2;
+        }
+
         setSelectedPosition({ x, y });
         setIsAddingComment(true);
       }
@@ -516,7 +537,9 @@ const EnhancedMedicalViewer: React.FC = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="base-image-url" className="text-sm font-medium">Base Image URL</label>
+                <label htmlFor="base-image-url" className="text-sm font-medium">
+                  Base Image URL
+                </label>
                 <Input
                   id="base-image-url"
                   type="url"
@@ -527,7 +550,10 @@ const EnhancedMedicalViewer: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="overlay-url" className="text-sm font-medium flex items-center gap-2">
+                <label
+                  htmlFor="overlay-url"
+                  className="text-sm font-medium flex items-center gap-2"
+                >
                   <Layers className="h-4 w-4" />
                   Overlay URL (Optional)
                 </label>
@@ -624,18 +650,11 @@ const EnhancedMedicalViewer: React.FC = () => {
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2">
               {availableSamples.map((sample) => (
-                <div
+                <button
                   key={sample.id}
-                  className="group p-4 border rounded-lg cursor-pointer hover:border-blue-500 transition-colors"
+                  type="button"
+                  className="group p-4 border rounded-lg cursor-pointer hover:border-blue-500 transition-colors text-left w-full"
                   onClick={() => loadSampleImage(sample)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      loadSampleImage(sample);
-                    }
-                  }}
-                  tabIndex={0}
-                  role="button"
                   aria-label={`Load ${sample.title}`}
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -668,7 +687,7 @@ const EnhancedMedicalViewer: React.FC = () => {
                     <Play className="h-3 w-3 mr-1" />
                     View
                   </Button>
-                </div>
+                </button>
               ))}
             </div>
 
@@ -836,7 +855,12 @@ const EnhancedMedicalViewer: React.FC = () => {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <label htmlFor="brightness-slider" className="text-white text-xs">Brightness</label>
+                    <label
+                      htmlFor="brightness-slider"
+                      className="text-white text-xs"
+                    >
+                      Brightness
+                    </label>
                     <span className="text-white text-xs">{brightness[0]}%</span>
                   </div>
                   <Slider
@@ -852,7 +876,12 @@ const EnhancedMedicalViewer: React.FC = () => {
 
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <label htmlFor="contrast-slider" className="text-white text-xs">Contrast</label>
+                    <label
+                      htmlFor="contrast-slider"
+                      className="text-white text-xs"
+                    >
+                      Contrast
+                    </label>
                     <span className="text-white text-xs">{contrast[0]}%</span>
                   </div>
                   <Slider
@@ -867,9 +896,17 @@ const EnhancedMedicalViewer: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="colormap-select" className="text-white text-xs">Colormap</label>
+                  <label
+                    htmlFor="colormap-select"
+                    className="text-white text-xs"
+                  >
+                    Colormap
+                  </label>
                   <Select value={colormap} onValueChange={setColormap}>
-                    <SelectTrigger id="colormap-select" className="bg-gray-600 border-gray-500 text-white">
+                    <SelectTrigger
+                      id="colormap-select"
+                      className="bg-gray-600 border-gray-500 text-white"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -913,7 +950,12 @@ const EnhancedMedicalViewer: React.FC = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <label htmlFor="overlay-toggle" className="text-white text-xs">Show Overlay</label>
+                    <label
+                      htmlFor="overlay-toggle"
+                      className="text-white text-xs"
+                    >
+                      Show Overlay
+                    </label>
                     <Switch
                       id="overlay-toggle"
                       checked={showOverlay}
@@ -923,7 +965,12 @@ const EnhancedMedicalViewer: React.FC = () => {
 
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <label htmlFor="overlay-opacity" className="text-white text-xs">Opacity</label>
+                      <label
+                        htmlFor="overlay-opacity"
+                        className="text-white text-xs"
+                      >
+                        Opacity
+                      </label>
                       <span className="text-white text-xs">
                         {Math.round(overlayOpacity[0] * 100)}%
                       </span>
@@ -1022,9 +1069,16 @@ const EnhancedMedicalViewer: React.FC = () => {
         {/* Main Viewer */}
         <div className="flex-1 relative bg-black">
           {/* Canvas Container */}
-          <div
-            className="w-full h-full relative"
+          <button
+            type="button"
+            className="w-full h-full relative block"
             onClick={handleCanvasClick}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleCanvasClick(e);
+              }
+            }}
             style={{
               cursor:
                 activeTool === 'pan'
@@ -1035,6 +1089,7 @@ const EnhancedMedicalViewer: React.FC = () => {
                       ? 'crosshair'
                       : 'default',
             }}
+            aria-label={`Medical image viewer. Active tool: ${activeTool || 'none'}`}
           >
             <NiiVueViewer
               imageUrl={imageUrl}
@@ -1051,7 +1106,7 @@ const EnhancedMedicalViewer: React.FC = () => {
               activeTool={activeTool}
               className="w-full h-full"
             />
-          </div>
+          </button>
 
           {/* Loading State */}
           {!isViewerReady && (imageUrl || imageFile) && (
@@ -1117,7 +1172,7 @@ const EnhancedMedicalViewer: React.FC = () => {
                           </span>
                         </div>
                         <div className="flex gap-1">
-                          {renderRoleBadge(comment.role, "text-xs")}
+                          {renderRoleBadge(comment.role, 'text-xs')}
                           <Badge
                             variant="outline"
                             className="text-xs capitalize"

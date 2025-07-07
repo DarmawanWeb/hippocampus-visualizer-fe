@@ -431,9 +431,7 @@ export default function AdminDashboard() {
                           {log.action}
                         </TableCell>
                         <TableCell>{log.user}</TableCell>
-                        <TableCell>
-                          {renderRoleBadge(log.role)}
-                        </TableCell>
+                        <TableCell>{renderRoleBadge(log.role)}</TableCell>
                         <TableCell>{log.timestamp}</TableCell>
                         <TableCell>
                           <Badge className={getLogLevelColor(log.level)}>

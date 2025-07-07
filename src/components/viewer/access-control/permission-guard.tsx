@@ -1,16 +1,16 @@
-// src/components/viewer/access-control/permission-guard.tsx
 'use client';
+
 import { AlertTriangle, Shield } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useRBAC } from '@/hooks/use-rbac';
-import type { User } from '@/types/auth';
+import type { User, UserPermissions } from '@/types/auth';
 
 interface PermissionGuardProps {
   children: ReactNode;
   requiredRoles?: User['role'][];
-  requiredPermissions?: string[];
+  requiredPermissions?: (keyof UserPermissions)[];
   fallback?: ReactNode;
   showWarning?: boolean;
 }
@@ -45,7 +45,7 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
     );
   }
 
-  // Check role-based access
+  // Role-based access
   if (requiredRoles.length > 0 && !hasRole(requiredRoles)) {
     if (!showWarning) return null;
 
@@ -69,11 +69,11 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
     );
   }
 
-  // Check permission-based access
+  // Permission-based access
   if (requiredPermissions.length > 0) {
-    const hasRequiredPermission = requiredPermissions.some((permission) => {
-      return hasPermission(permission as any);
-    });
+    const hasRequiredPermission = requiredPermissions.some((permission) =>
+      hasPermission(permission),
+    );
 
     if (!hasRequiredPermission) {
       if (!showWarning) return null;
