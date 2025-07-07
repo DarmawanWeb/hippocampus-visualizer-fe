@@ -1,0 +1,27 @@
+# lefthook.yml
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: "*.{js,jsx,ts,tsx,json}"
+      run: pnpx @biomejs/biome check --fix  {staged_files}
+    format :
+      glob: "*.{js,jsx,ts,tsx,json}"
+      run: pnpx @biomejs/biome format {staged_files}
+      fail_text: "Formatting failed"
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: npx tsc --noEmit
+      fail_text: "TypeScript compilation failed"
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpx commitlint --edit {1}
+      fail_text: "Commit message must follow conventional commits format"
+
+pre-push:
+  commands:
+    build:
+      run: pnpm run build
+      fail_text: "Build failed"

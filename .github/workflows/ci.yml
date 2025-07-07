@@ -1,0 +1,23 @@
+name: CI Pipeline Controller
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  build:
+    needs: lint
+    uses: ./.github/workflows/build.yml
+
+  # Uncomment the following lines to enable deployment in VPS
+  deploy:
+    needs: build
+    uses: ./.github/workflows/deploy.yml
+    secrets:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USERNAME: ${{ secrets.VPS_USERNAME }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      APP_PATH: ${{ secrets.APP_PATH }}
