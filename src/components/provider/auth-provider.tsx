@@ -26,18 +26,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const PUBLIC_ROUTES = [
   '/auth',
-  '/login',
+  // '/login',
   '/register',
   '/forgot-password',
   '/signin',
   '/signup',
-  '/dashboard',
-  '/dashboard/doctor',
-  '/dashboard/patient',
-  '/dashboard/staff',
-  '/dashboard/admin',
-  '/dashboard/viewer',
-  '/viewer',
+  // '/dashboard/doctor',
+  // '/dashboard/patient',
+  // '/dashboard/staff',
+  // '/dashboard/admin',
+  // '/dashboard/viewer',
+  // '/viewer',
 ];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -77,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const hasAuth = authService.isAuthenticated();
 
     if (isPublic && hasAuth && user) {
-      router.replace('/dashboard');
+      router.replace(`/dashboard/${user.role}`);
     } else if (!isPublic && !hasAuth) {
       router.replace('/signin');
     } else if (!isPublic && hasAuth && !user) {

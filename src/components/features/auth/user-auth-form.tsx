@@ -95,7 +95,7 @@ export default function UserAuthForm({ type }: UserAuthFormProps) {
               <FormControl>
                 <Input
                   type="email"
-                  placeholder="gus@gmail.com"
+                  placeholder="Your email"
                   disabled={isLoading}
                   {...field}
                 />

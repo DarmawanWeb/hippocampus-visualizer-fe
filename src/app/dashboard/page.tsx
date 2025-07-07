@@ -1,17 +1,18 @@
-// src/app/dashboard/page.tsx
 'use client';
 import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { useRBAC } from '@/hooks/use-rbac';
+import { useAuthContext } from '@/components/provider/auth-provider';
 
 export default function DashboardPage() {
-  const { user, isLoading } = useRBAC();
+  const { user, isLoading } = useAuthContext();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && user) {
-      // Route to appropriate dashboard based on user role
+    if (isLoading) return;
+
+    if (user?.role) {
+      // console.log('Redirecting based on role:', user.role);
       switch (user.role) {
         case 'admin':
           router.replace('/dashboard/admin');
@@ -26,11 +27,15 @@ export default function DashboardPage() {
           router.replace('/dashboard/staff');
           break;
         default:
+          // console.warn('Unknown role:', user.role);
           break;
       }
+    } else {
+      // console.warn('No user role found');
     }
-  }, [user, isLoading, router]);
+  }, [isLoading, user?.role, router]);
 
+  // Loading screen while fetching user
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -42,10 +47,16 @@ export default function DashboardPage() {
     );
   }
 
+  // Optional: If user is null, you might redirect to login page or show error
   if (!user) {
-    return null;
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p>User not found.</p>
+      </div>
+    );
   }
 
+  // Fallback UI during redirect
   return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center">
