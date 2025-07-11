@@ -456,7 +456,6 @@ const NiiVueViewer: React.FC<NiiVueViewerProps> = ({
         }}
       />
 
-      {/* Loading State */}
       {!isInitialized && (imageUrl || imageFile) && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 z-20">
           <div className="text-center text-white">

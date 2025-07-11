@@ -1,22 +1,20 @@
-// app/dashboard/admin/page.tsx - RBAC Integrated Admin Dashboard - FINAL FIXED
 'use client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
-  AlertTriangle,
-  BarChart3,
   Brain,
   Edit,
-  Eye,
-  FileText,
+  Save,
   Search,
-  Settings,
   Shield,
+  Stethoscope,
   Trash2,
-  TrendingUp,
   UserPlus,
   Users,
 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
+import { z } from 'zod';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,8 +24,24 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { RoleBadge } from '@/components/ui/role-badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -36,133 +50,153 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PermissionGuard } from '@/components/viewer/access-control/permission-guard';
 import { useAuth } from '@/hooks/useAuth';
+import { authService } from '@/services/auth-service';
+import type { User } from '@/types/auth';
 
-// Define proper types
-type UserRole = 'admin' | 'doctor' | 'staff' | 'patient';
-type LogLevel = 'info' | 'warning' | 'error';
+// Zod Validation Schemas
+const userRoleSchema = z.enum(['admin', 'doctor', 'staff', 'patient']);
+const logLevelSchema = z.enum(['info', 'warning', 'error']);
 
-interface MockUser {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  status: string;
-  createdAt: string;
-  lastLogin: string;
-}
+const registerFormSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  role: userRoleSchema,
+});
 
-interface MockLog {
-  id: string;
-  action: string;
-  user: string;
-  role: UserRole | 'unknown';
-  timestamp: string;
-  level: LogLevel;
-  details: string;
-}
+const roleUpdateFormSchema = z.object({
+  userId: z.string().min(1, 'User ID is required'),
+  newRole: userRoleSchema,
+});
 
-// Mock data for demonstration
+type UserRole = z.infer<typeof userRoleSchema>;
+type LogLevel = z.infer<typeof logLevelSchema>;
+type RegisterFormData = z.infer<typeof registerFormSchema>;
+type RoleUpdateFormData = z.infer<typeof roleUpdateFormSchema>;
+
+// Mock stats data
 const mockStats = {
-  totalUsers: 1847,
-  totalPatients: 1234,
-  totalScans: 2847,
-  pendingReviews: 23,
   monthlyGrowth: {
     users: 12.5,
     patients: 8.2,
-    scans: 15.3,
-  },
-  usersByRole: {
-    admin: 5,
-    doctor: 45,
-    staff: 23,
-    patient: 1774,
-  },
-  scansByStatus: {
-    pending: 23,
-    processing: 12,
-    completed: 2795,
-    error: 17,
+    doctors: 5.1,
+    staff: 15.3,
   },
 };
 
-const mockRecentUsers: MockUser[] = [
-  {
-    id: '1',
-    name: 'Dr. Sarah Johnson',
-    email: 'sarah.johnson@hospital.com',
-    role: 'doctor',
-    status: 'active',
-    createdAt: '2024-06-28',
-    lastLogin: '2024-06-29 14:30',
-  },
-  {
-    id: '2',
-    name: 'Mike Chen',
-    email: 'mike.chen@lab.com',
-    role: 'staff',
-    status: 'active',
-    createdAt: '2024-06-27',
-    lastLogin: '2024-06-29 13:15',
-  },
-  {
-    id: '3',
-    name: 'Emily Davis',
-    email: 'emily.davis@email.com',
-    role: 'patient',
-    status: 'pending',
-    createdAt: '2024-06-26',
-    lastLogin: 'Never',
-  },
-];
-
-const mockSystemLogs: MockLog[] = [
-  {
-    id: '1',
-    action: 'User Login',
-    user: 'Dr. Sarah Johnson',
-    role: 'doctor',
-    timestamp: '2024-06-29 14:30:22',
-    level: 'info',
-    details: 'Successful login from 192.168.1.100',
-  },
-  {
-    id: '2',
-    action: 'Comment Added',
-    user: 'Dr. Robert Smith',
-    role: 'doctor',
-    timestamp: '2024-06-29 14:25:10',
-    level: 'info',
-    details: 'Added finding comment to scan MRI20240629001',
-  },
-  {
-    id: '3',
-    action: 'Failed Login Attempt',
-    user: 'unknown',
-    role: 'unknown',
-    timestamp: '2024-06-29 14:15:33',
-    level: 'warning',
-    details: 'Multiple failed login attempts from 203.0.113.1',
-  },
-  {
-    id: '4',
-    action: 'Permission Change',
-    user: 'Admin',
-    role: 'admin',
-    timestamp: '2024-06-29 13:45:12',
-    level: 'info',
-    details: 'Updated permissions for user ID: 123',
-  },
-];
-
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const [searchTerm, setSearchTerm] = useState('');
+  const queryClient = useQueryClient();
 
-  // Helper function to render role badge safely
+  // React Query hooks using your auth service
+  const { data: users, refetch: refetchUsers } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => authService.getAllUsers(),
+    retry: 3,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  const { data: doctors } = useQuery({
+    queryKey: ['users', 'doctor'],
+    queryFn: () => authService.getUserByRole('doctor'),
+    retry: 3,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: patients } = useQuery({
+    queryKey: ['users', 'patient'],
+    queryFn: () => authService.getUserByRole('patient'),
+    retry: 3,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: staff } = useQuery({
+    queryKey: ['users', 'staff'],
+    queryFn: () => authService.getUserByRole('staff'),
+    retry: 3,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Mutations using your auth service
+  const createUserMutation = useMutation({
+    mutationFn: (data: RegisterFormData) => authService.createUser(data),
+    onSuccess: () => {
+      // Invalidate and refetch users data
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'doctor'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'patient'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'staff'] });
+      toast.success('User created successfully');
+    },
+    onError: (error: any) => {
+      console.error('Create user error:', error);
+      toast.error(error.response?.data?.message || 'Failed to create user');
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ userId, newRole }: { userId: string; newRole: string }) =>
+      authService.updateUserRole(parseInt(userId), newRole),
+    onSuccess: () => {
+      // Invalidate and refetch users data
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'doctor'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'patient'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'staff'] });
+      toast.success('User role updated successfully');
+    },
+    onError: (error: any) => {
+      console.error('Update role error:', error);
+      toast.error(
+        error.response?.data?.message || 'Failed to update user role',
+      );
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (userId: number) => authService.deleteUser(userId),
+    onSuccess: () => {
+      // Invalidate and refetch users data
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'doctor'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'patient'] });
+      queryClient.invalidateQueries({ queryKey: ['users', 'staff'] });
+      toast.success('User deleted successfully');
+    },
+    onError: (error: any) => {
+      console.error('Delete user error:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete user');
+    },
+  });
+
+  // State management
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [isRoleUpdateOpen, setIsRoleUpdateOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [registerForm, setRegisterForm] = useState<RegisterFormData>({
+    name: '',
+    email: '',
+    password: '',
+    role: 'patient',
+  });
+  const [roleUpdateForm, setRoleUpdateForm] = useState<RoleUpdateFormData>({
+    userId: '',
+    newRole: 'patient',
+  });
+
+  // Form validation errors
+  const [registerErrors, setRegisterErrors] = useState<
+    Partial<Record<keyof RegisterFormData, string>>
+  >({});
+  const [roleUpdateErrors, setRoleUpdateErrors] = useState<
+    Partial<Record<keyof RoleUpdateFormData, string>>
+  >({});
+
   const renderRoleBadge = (role: UserRole | 'unknown') => {
     if (role === 'unknown') {
       return (
@@ -172,21 +206,6 @@ export default function AdminDashboard() {
       );
     }
     return <RoleBadge role={role} />;
-  };
-
-  const getRoleBadgeColor = (role: string) => {
-    switch (role) {
-      case 'admin':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'doctor':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'staff':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'patient':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
   };
 
   const getStatusBadgeColor = (status: string) => {
@@ -202,23 +221,116 @@ export default function AdminDashboard() {
     }
   };
 
-  const getLogLevelColor = (level: string) => {
-    switch (level) {
-      case 'info':
-        return 'bg-blue-100 text-blue-800';
-      case 'warning':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'error':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      // Validate form data
+      const validatedData = registerFormSchema.parse(registerForm);
+
+      // Call mutation
+      await createUserMutation.mutateAsync(validatedData);
+
+      // Reset form and close dialog
+      setIsRegisterOpen(false);
+      setRegisterForm({ name: '', email: '', password: '', role: 'patient' });
+      setRegisterErrors({});
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const fieldErrors: Partial<Record<keyof RegisterFormData, string>> = {};
+        error.errors.forEach((err) => {
+          if (err.path[0]) {
+            fieldErrors[err.path[0] as keyof RegisterFormData] = err.message;
+          }
+        });
+        setRegisterErrors(fieldErrors);
+      }
+    }
+  };
+
+  const handleRoleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      // Validate form data
+      const validatedData = roleUpdateFormSchema.parse(roleUpdateForm);
+
+      // Call mutation
+      await updateRoleMutation.mutateAsync({
+        userId: validatedData.userId,
+        newRole: validatedData.newRole,
+      });
+
+      // Reset form and close dialog
+      setIsRoleUpdateOpen(false);
+      setRoleUpdateErrors({});
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const fieldErrors: Partial<Record<keyof RoleUpdateFormData, string>> =
+          {};
+        error.errors.forEach((err) => {
+          if (err.path[0]) {
+            fieldErrors[err.path[0] as keyof RoleUpdateFormData] = err.message;
+          }
+        });
+        setRoleUpdateErrors(fieldErrors);
+      }
+    }
+  };
+
+  const openRoleUpdateModal = (user: User) => {
+    setSelectedUser(user);
+    setRoleUpdateForm({
+      userId: user.id.toString(),
+      newRole: user.role,
+    });
+    setRoleUpdateErrors({});
+    setIsRoleUpdateOpen(true);
+  };
+
+  const openDeleteModal = (user: User) => {
+    setUserToDelete(user);
+    setIsDeleteOpen(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      await deleteUserMutation.mutateAsync(userToDelete.id);
+      setIsDeleteOpen(false);
+      setUserToDelete(null);
+    } catch (error) {
+      // Error is already handled in the mutation
+    }
+  };
+
+  const handleRegisterInputChange = (
+    field: keyof RegisterFormData,
+    value: string,
+  ) => {
+    setRegisterForm((prev) => ({ ...prev, [field]: value }));
+    // Clear error when user starts typing
+    if (registerErrors[field]) {
+      setRegisterErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  const handleRoleUpdateInputChange = (
+    field: keyof RoleUpdateFormData,
+    value: string,
+  ) => {
+    setRoleUpdateForm((prev) => ({ ...prev, [field]: value }));
+    // Clear error when user starts typing
+    if (roleUpdateErrors[field]) {
+      setRoleUpdateErrors((prev) => ({ ...prev, [field]: undefined }));
     }
   };
 
   return (
     <PermissionGuard requiredRoles={['admin']}>
       <div className="p-6 space-y-6 max-w-7xl mx-auto">
-        {/* Header */}
+        {/* Enhanced Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -236,13 +348,250 @@ export default function AdminDashboard() {
               <RoleBadge role={user?.role || 'admin'} />
             </div>
           </div>
-          <Button className="flex items-center gap-2">
-            <UserPlus className="h-4 w-4" />
-            Add New User
-          </Button>
+
+          <Dialog open={isRegisterOpen} onOpenChange={setIsRegisterOpen}>
+            <DialogTrigger asChild></DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Register New User</DialogTitle>
+                <DialogDescription>
+                  Create a new user account and assign their role
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    value={registerForm.name}
+                    onChange={(e) =>
+                      handleRegisterInputChange('name', e.target.value)
+                    }
+                    className={registerErrors.name ? 'border-red-500' : ''}
+                    required
+                  />
+                  {registerErrors.name && (
+                    <p className="text-sm text-red-600">
+                      {registerErrors.name}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={registerForm.email}
+                    onChange={(e) =>
+                      handleRegisterInputChange('email', e.target.value)
+                    }
+                    className={registerErrors.email ? 'border-red-500' : ''}
+                    required
+                  />
+                  {registerErrors.email && (
+                    <p className="text-sm text-red-600">
+                      {registerErrors.email}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={registerForm.password}
+                    onChange={(e) =>
+                      handleRegisterInputChange('password', e.target.value)
+                    }
+                    className={registerErrors.password ? 'border-red-500' : ''}
+                    required
+                  />
+                  {registerErrors.password && (
+                    <p className="text-sm text-red-600">
+                      {registerErrors.password}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role</Label>
+                  <Select
+                    value={registerForm.role}
+                    onValueChange={(value: UserRole) =>
+                      handleRegisterInputChange('role', value)
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="patient">Patient</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="doctor">Doctor</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {registerErrors.role && (
+                    <p className="text-sm text-red-600">
+                      {registerErrors.role}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    type="submit"
+                    disabled={createUserMutation.isPending}
+                    className="flex-1"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {createUserMutation.isPending
+                      ? 'Creating...'
+                      : 'Register User'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsRegisterOpen(false);
+                      setRegisterErrors({});
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
 
-        {/* Quick Stats */}
+        {/* Role Update Dialog */}
+        <Dialog open={isRoleUpdateOpen} onOpenChange={setIsRoleUpdateOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Update User Role</DialogTitle>
+              <DialogDescription>
+                Change the role for {selectedUser?.name}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleRoleUpdate} className="space-y-4">
+              <div>
+                <Label>Current User</Label>
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{selectedUser?.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedUser?.email}
+                      </p>
+                    </div>
+                    <RoleBadge role={selectedUser?.role || 'patient'} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="newRole">New Role</Label>
+                <Select
+                  value={roleUpdateForm.newRole}
+                  onValueChange={(value: UserRole) =>
+                    handleRoleUpdateInputChange('newRole', value)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select new role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="patient">Patient</SelectItem>
+                    <SelectItem value="staff">Staff</SelectItem>
+                    <SelectItem value="doctor">Doctor</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+                {roleUpdateErrors.newRole && (
+                  <p className="text-sm text-red-600">
+                    {roleUpdateErrors.newRole}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button
+                  type="submit"
+                  disabled={updateRoleMutation.isPending}
+                  className="flex-1"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {updateRoleMutation.isPending ? 'Updating...' : 'Update Role'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsRoleUpdateOpen(false);
+                    setRoleUpdateErrors({});
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <Trash2 className="h-5 w-5" />
+                Delete User
+              </DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this user? This action cannot be
+                undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            {userToDelete && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-red-900">
+                      {userToDelete.name}
+                    </p>
+                    <p className="text-sm text-red-700">{userToDelete.email}</p>
+                  </div>
+                  <RoleBadge role={userToDelete.role} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="destructive"
+                onClick={handleDeleteUser}
+                disabled={deleteUserMutation.isPending}
+                className="flex-1"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleteUserMutation.isPending ? 'Deleting...' : 'Delete User'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsDeleteOpen(false);
+                  setUserToDelete(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -251,691 +600,131 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">
-                {mockStats.totalUsers.toLocaleString()}
+                {users?.length || 0}
               </div>
-              <p className="text-xs text-muted-foreground">
-                +{mockStats.monthlyGrowth.users}% from last month
-              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Active Patients
+                Total Patients
               </CardTitle>
               <Activity className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                {mockStats.totalPatients.toLocaleString()}
+                {patients?.length || 0}
               </div>
-              <p className="text-xs text-muted-foreground">
-                +{mockStats.monthlyGrowth.patients}% from last month
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Scans</CardTitle>
-              <Brain className="h-4 w-4 text-purple-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-purple-600">
-                {mockStats.totalScans.toLocaleString()}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                +{mockStats.monthlyGrowth.scans}% from last month
-              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Pending Reviews
+                Total Doctors
               </CardTitle>
-              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              <Stethoscope className="h-4 w-4 text-purple-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">
+                {doctors?.length || 0}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Staff</CardTitle>
+              <Brain className="h-4 w-4 text-orange-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">
-                {mockStats.pendingReviews}
+                {staff?.length || 0}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Requires attention
-              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Management Tabs */}
-        <Tabs defaultValue="users" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="users">User Management</TabsTrigger>
-            <TabsTrigger value="system">System Logs</TabsTrigger>
-            <TabsTrigger value="permissions">Permissions</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="users" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5" />
-                      User Management
-                    </CardTitle>
-                    <CardDescription>
-                      Manage system users and their permissions
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search users..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-8 w-64"
-                      />
-                    </div>
-                    <Button>
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      Add User
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Last Login</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockRecentUsers.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-medium">
-                          {user.name}
-                        </TableCell>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>
-                          <RoleBadge role={user.role} />
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getStatusBadgeColor(user.status)}>
-                            {user.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{user.lastLogin}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="system" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  System Activity Logs
-                </CardTitle>
-                <CardDescription>
-                  Monitor system activities and security events
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Action</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>Level</TableHead>
-                      <TableHead>Details</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockSystemLogs.map((log) => (
-                      <TableRow key={log.id}>
-                        <TableCell className="font-medium">
-                          {log.action}
-                        </TableCell>
-                        <TableCell>{log.user}</TableCell>
-                        <TableCell>{renderRoleBadge(log.role)}</TableCell>
-                        <TableCell>{log.timestamp}</TableCell>
-                        <TableCell>
-                          <Badge className={getLogLevelColor(log.level)}>
-                            {log.level}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          {log.details}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="permissions" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Role Permissions Matrix
-                </CardTitle>
-                <CardDescription>
-                  View and manage role-based permissions
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Admin Permissions */}
-                    <Card className="border-red-200">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Shield className="h-4 w-4 text-red-600" />
-                          Administrator
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Add Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Edit Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Delete Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">View Private Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Manage Users</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Access All Patients</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Doctor Permissions */}
-                    <Card className="border-blue-200">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Activity className="h-4 w-4 text-blue-600" />
-                          Doctor
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Add Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Edit Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Delete Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">View Private Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Manage Users</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Access All Patients</span>
-                          <Badge
-                            variant="outline"
-                            className="text-green-600 border-green-600"
-                          >
-                            ✓
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Patient Permissions */}
-                    <Card className="border-gray-200">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <Users className="h-4 w-4 text-gray-600" />
-                          Patient
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Add Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Edit Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Delete Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">View Private Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Manage Users</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Access All Patients</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Staff Permissions */}
-                    <Card className="border-green-200">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-green-600" />
-                          Lab Staff
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Add Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Edit Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Delete Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">View Private Comments</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Manage Users</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Access All Patients</span>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            ✗
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {Object.entries(mockStats.usersByRole).map(
-                      ([role, count]) => (
-                        <div
-                          key={role}
-                          className="flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-3">
-                            <RoleBadge role={role as UserRole} />
-                            <span className="text-sm font-medium capitalize">
-                              {role.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold">{count}</span>
-                            <div className="h-2 w-16 bg-gray-200 rounded-full">
-                              <div
-                                className="h-full bg-blue-500 rounded-full"
-                                style={{
-                                  width: `${(count / mockStats.totalUsers) * 100}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ),
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="analytics" className="space-y-4">
-            <div className="grid gap-6 md:grid-cols-3">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-green-600" />
-                    Growth Metrics
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">New Users</span>
-                      <span className="text-sm font-medium text-green-600">
-                        +{mockStats.monthlyGrowth.users}%
-                      </span>
-                    </div>
-                    <div className="h-2 bg-green-100 rounded-full">
-                      <div
-                        className="h-full bg-green-500 rounded-full"
-                        style={{
-                          width: `${mockStats.monthlyGrowth.users * 2}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">New Patients</span>
-                      <span className="text-sm font-medium text-blue-600">
-                        +{mockStats.monthlyGrowth.patients}%
-                      </span>
-                    </div>
-                    <div className="h-2 bg-blue-100 rounded-full">
-                      <div
-                        className="h-full bg-blue-500 rounded-full"
-                        style={{
-                          width: `${mockStats.monthlyGrowth.patients * 2}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">MRI Scans</span>
-                      <span className="text-sm font-medium text-purple-600">
-                        +{mockStats.monthlyGrowth.scans}%
-                      </span>
-                    </div>
-                    <div className="h-2 bg-purple-100 rounded-full">
-                      <div
-                        className="h-full bg-purple-500 rounded-full"
-                        style={{
-                          width: `${mockStats.monthlyGrowth.scans * 2}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-blue-600" />
-                    User Distribution
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {Object.entries(mockStats.usersByRole).map(
-                    ([role, count]) => (
-                      <div
-                        key={role}
-                        className="flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <RoleBadge role={role as UserRole} />
-                          <span className="text-sm font-medium capitalize">
-                            {role.replace('_', ' ')}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{count}</span>
-                          <div className="h-2 w-16 bg-gray-200 rounded-full">
-                            <div
-                              className="h-full bg-blue-500 rounded-full"
-                              style={{
-                                width: `${(count / mockStats.totalUsers) * 100}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-orange-600" />
-                    System Health
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">
-                      99.9%
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      System Uptime
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">
-                      1.2TB
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Storage Used
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-purple-600">
-                      156
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Active Sessions
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-orange-600">23</div>
-                    <p className="text-sm text-muted-foreground">
-                      Pending Actions
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
-
-        {/* System Information */}
-        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-          <CardContent className="pt-6">
-            <div className="flex items-start space-x-3">
-              <div className="mt-0.5">
-                <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-              </div>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium text-blue-900 dark:text-blue-100">
-                  System Administration Access
-                </p>
-                <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
-                  You have full administrative access to the IBrain2u medical
-                  imaging platform. This includes user management, system
-                  monitoring, and security configuration. All administrative
-                  actions are logged for audit purposes.
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <Button size="sm" variant="outline" className="bg-white">
-                    <Settings className="h-4 w-4 mr-2" />
-                    System Settings
-                  </Button>
-                  <Button size="sm" variant="outline" className="bg-white">
-                    <FileText className="h-4 w-4 mr-2" />
-                    Audit Logs
-                  </Button>
-                  <Button size="sm" variant="outline" className="bg-white">
-                    <Shield className="h-4 w-4 mr-2" />
-                    Security Center
-                  </Button>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Management
+                </CardTitle>
+                <CardDescription>
+                  Manage system users and their permissions
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Search users..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8 w-64"
+                  />
                 </div>
+                <Button onClick={() => setIsRegisterOpen(true)}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add User
+                </Button>
               </div>
             </div>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users
+                  ?.filter(
+                    (user) =>
+                      searchTerm === '' ||
+                      user.name
+                        .toLowerCase()
+                        .includes(searchTerm.toLowerCase()) ||
+                      user.email
+                        .toLowerCase()
+                        .includes(searchTerm.toLowerCase()),
+                  )
+                  .map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium">{user.name}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{renderRoleBadge(user.role)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openRoleUpdateModal(user)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => openDeleteModal(user)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>

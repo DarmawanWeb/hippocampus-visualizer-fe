@@ -1,4 +1,3 @@
-// service/auth-service.ts
 import { api } from '@/lib/axios';
 import {
   clearAuthData,
@@ -33,7 +32,7 @@ class AuthService {
   }
 
   async register(data: AuthRequest) {
-    await api.post<ApiResponse<void>>('/auth/create-user', data);
+    await api.post<ApiResponse<void>>('/auth/register', data);
   }
 
   async logout() {
@@ -43,6 +42,15 @@ class AuthService {
     } finally {
       clearAuthData();
     }
+  }
+
+  async getUserByRole(role: string): Promise<User[]> {
+    const res = await api.get<ApiResponse<User[]>>(`/users/role/${role}`);
+    return res.data.data;
+  }
+
+  async createUser(data: AuthRequest): Promise<void> {
+    const res = await api.post<ApiResponse<User>>('/auth/create-user', data);
   }
 
   async getCurrentUser(): Promise<User> {
@@ -56,8 +64,24 @@ class AuthService {
     return res.data.data;
   }
 
+  async getAllUsers(): Promise<User[]> {
+    const res = await api.get<ApiResponse<User[]>>('/users');
+    return res.data.data;
+  }
+
   isAuthenticated() {
     return hasTokens();
+  }
+
+  async updateUserRole(userId: number, role: string): Promise<User> {
+    const res = await api.patch<ApiResponse<User>>(`/users/${userId}/role`, {
+      role,
+    });
+    return res.data.data;
+  }
+
+  async deleteUser(userId: number): Promise<void> {
+    await api.delete<ApiResponse<void>>(`/users/${userId}`);
   }
 }
 

@@ -25,7 +25,8 @@
       },
       "suspicious": {
         "noDocumentCookie": "off",
-        "noConsole": "warn"
+        "noConsole": "off",
+        "noExplicitAny": "off"
       }
     }
   },

@@ -1,4 +1,3 @@
-// src/types/auth.ts - UPDATED with RBAC
 export interface User {
   id: number;
   name: string;
@@ -14,6 +13,7 @@ export interface AuthRequest {
   name?: string;
   email: string;
   password: string;
+  role?: 'admin' | 'doctor' | 'patient' | 'staff';
 }
 
 export interface AuthResponse {

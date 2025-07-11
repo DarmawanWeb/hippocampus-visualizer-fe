@@ -10,7 +10,6 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      // Will be handled by AuthProvider
       return;
     }
   }, [user, isLoading]);

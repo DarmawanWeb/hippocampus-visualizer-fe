@@ -1,7 +1,6 @@
-// src/components/layout/user-nav.tsx
 'use client';
 
-import { LogOut, Settings, User } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuthContext } from '@/components/provider/auth-provider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -11,13 +10,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RoleBadge } from '@/components/ui/role-badge';
 import { useAuth } from '@/hooks/useAuth';
 
-// Remove user prop since we get it from useAuth
 export function UserNav() {
   const { user } = useAuth();
   const { logout } = useAuthContext();
@@ -27,14 +23,6 @@ export function UserNav() {
     try {
       await logout();
     } catch (error) {}
-  };
-
-  const handleProfile = () => {
-    router.push('/dashboard/profile');
-  };
-
-  const handleSettings = () => {
-    router.push('/dashboard/settings');
   };
 
   if (!user) {
@@ -69,21 +57,8 @@ export function UserNav() {
             <p className="text-xs leading-none text-muted-foreground">
               {user.email}
             </p>
-            <div className="pt-1">
-              <RoleBadge role={user.role} />
-            </div>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleProfile}>
-          <User className="mr-2 h-4 w-4" />
-          <span>Profile</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleSettings}>
-          <Settings className="mr-2 h-4 w-4" />
-          <span>Settings</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>

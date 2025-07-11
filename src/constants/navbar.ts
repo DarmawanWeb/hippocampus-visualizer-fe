@@ -9,12 +9,6 @@ export const navItems: NavItem[] = [
     isActive: false,
   },
   {
-    title: 'Medical Viewer',
-    url: '/viewer',
-    icon: 'brain', // ✅ Valid - maps to Brain icon
-    isActive: false,
-  },
-  {
     title: 'Patients',
     url: '/dashboard/patients',
     icon: 'users', // ✅ Valid - maps to Users icon

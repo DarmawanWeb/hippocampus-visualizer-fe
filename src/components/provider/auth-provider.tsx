@@ -7,6 +7,7 @@ import {
   useCurrentUser,
   useLogin,
   useLogout,
+  useRegister,
 } from '@/hooks/queries/use-auth-queries';
 import { authService } from '@/services/auth-service';
 import { useAuthStore } from '@/stores/auth-store';
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = authService.isAuthenticated() && !!user;
 
   const loginMut = useLogin();
+  const registerMut = useRegister();
   const logoutMut = useLogout();
 
   const isPublic = PUBLIC_ROUTES.includes(pathname);
@@ -66,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (c: AuthRequest) => {
-    await loginMut.mutateAsync(c);
+    await registerMut.mutateAsync(c);
     router.replace('/dashboard');
   };
 

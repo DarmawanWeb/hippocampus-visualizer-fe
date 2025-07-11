@@ -1,9 +1,8 @@
 'use client';
+
 import {
   Activity,
-  AlertTriangle,
-  Bell,
-  BookOpen,
+  AlertCircle,
   Brain,
   Calendar,
   CheckCircle,
@@ -11,20 +10,14 @@ import {
   Download,
   Eye,
   FileText,
-  Heart,
-  Info,
-  Mail,
-  MapPin,
-  MessageSquare,
-  Phone,
+  RefreshCw,
   Search,
-  Settings,
-  Shield,
-  Star,
   Stethoscope,
+  TrendingUp,
   User,
 } from 'lucide-react';
-import { useState } from 'react';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,6 +30,13 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -44,374 +44,441 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
-// Mock data for patient dashboard
-const mockPatientInfo = {
-  id: 'P000123',
-  name: 'Sarah Johnson',
-  email: 'sarah.johnson@email.com',
-  phone: '+1 (555) 123-4567',
-  dateOfBirth: '1990-03-15',
-  gender: 'Female',
-  address: '123 Main St, City, State 12345',
-  emergencyContact: {
-    name: 'John Johnson',
-    relationship: 'Spouse',
-    phone: '+1 (555) 987-6543',
-  },
-  allergies: ['Iodine contrast', 'Penicillin'],
-  medicalHistory: ['Migraine', 'Hypertension'],
-  assignedDoctor: 'Dr. Robert Smith',
-  nextAppointment: '2024-07-05 10:00 AM',
-};
-
-const mockPatientStats = {
-  totalScans: 8,
-  completedScans: 6,
-  pendingReviews: 2,
-  lastScanDate: '2024-06-29',
-  nextAppointment: '2024-07-05',
-  doctorComments: 4,
-};
-
-const mockMRIScans = [
-  {
-    id: '1',
-    scanCode: 'MRI20240629',
-    title: 'Brain MRI - Follow-up',
-    scanType: 'T1',
-    scanDate: '2024-06-29',
-    status: 'completed',
-    doctor: 'Dr. Robert Smith',
-    findings:
-      'No significant changes from previous scan. Follow-up recommended in 6 months.',
-    priority: 'normal',
-    hasComments: true,
-  },
-  {
-    id: '2',
-    scanCode: 'MRI20240615',
-    title: 'Brain MRI - Routine Check',
-    scanType: 'FLAIR',
-    scanDate: '2024-06-15',
-    status: 'completed',
-    doctor: 'Dr. Robert Smith',
-    findings: 'Stable findings. Continue current treatment plan.',
-    priority: 'normal',
-    hasComments: true,
-  },
-  {
-    id: '3',
-    scanCode: 'MRI20240601',
-    title: 'Brain MRI - Initial Assessment',
-    scanType: 'T2',
-    scanDate: '2024-06-01',
-    status: 'reviewed',
-    doctor: 'Dr. Robert Smith',
-    findings: 'Initial baseline scan shows normal brain structure.',
-    priority: 'normal',
-    hasComments: false,
-  },
-  {
-    id: '4',
-    scanCode: 'MRI20240528',
-    title: 'Brain MRI - Urgent',
-    scanType: 'DTI',
-    scanDate: '2024-05-28',
-    status: 'pending',
-    doctor: 'Dr. Robert Smith',
-    findings: null,
-    priority: 'high',
-    hasComments: false,
-  },
-];
-
-const mockComments = [
-  {
-    id: '1',
-    scanId: '1',
-    author: 'Dr. Robert Smith',
-    role: 'Neurologist',
-    content:
-      'The follow-up scan shows excellent progress. The previous abnormalities have significantly reduced. Please continue with the current medication regimen.',
-    type: 'finding',
-    timestamp: '2024-06-29 15:30',
-    isPrivate: false,
-  },
-  {
-    id: '2',
-    scanId: '1',
-    author: 'Dr. Robert Smith',
-    role: 'Neurologist',
-    content:
-      'Schedule next follow-up in 6 months. Patient should continue current lifestyle modifications.',
-    type: 'recommendation',
-    timestamp: '2024-06-29 15:35',
-    isPrivate: false,
-  },
-  {
-    id: '3',
-    scanId: '2',
-    author: 'Dr. Robert Smith',
-    role: 'Neurologist',
-    content:
-      'Stable findings compared to previous scans. Treatment is working effectively.',
-    type: 'note',
-    timestamp: '2024-06-15 11:20',
-    isPrivate: false,
-  },
-];
-
-const mockAppointments = [
-  {
-    id: '1',
-    date: '2024-07-05',
-    time: '10:00 AM',
-    doctor: 'Dr. Robert Smith',
-    type: 'Follow-up Consultation',
-    status: 'scheduled',
-    notes: 'Review recent MRI results and discuss treatment plan',
-  },
-  {
-    id: '2',
-    date: '2024-07-20',
-    time: '02:00 PM',
-    doctor: 'Dr. Emily Chen',
-    type: 'Routine Check-up',
-    status: 'scheduled',
-    notes: 'General health assessment and medication review',
-  },
-  {
-    id: '3',
-    date: '2024-06-29',
-    time: '09:00 AM',
-    doctor: 'Lab Technician',
-    type: 'MRI Scan',
-    status: 'completed',
-    notes: 'Brain MRI scan completed successfully',
-  },
-];
+import { PermissionGuard } from '@/components/viewer/access-control/permission-guard';
+import {
+  type MriScan,
+  useGetMriScansByPatient,
+} from '@/hooks/queries/use-mri-queries';
+import { useAuth } from '@/hooks/useAuth';
 
 const PatientDashboard = () => {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [timeFilter, setTimeFilter] = useState<string>('all');
+
+  // API hooks - get scans for current patient
+  const {
+    data: myMriScans = [],
+    isLoading: scansLoading,
+    error: scansError,
+    refetch,
+  } = useGetMriScansByPatient(user?.id || 0);
+
+  // Calculate patient statistics
+  const patientStats = useMemo(() => {
+    const today = new Date();
+    const todayStart = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
+    const thisMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Today's scans
+    const todayScans = myMriScans.filter(
+      (scan) => new Date(scan.createdAt) >= todayStart,
+    );
+
+    // This month's scans
+    const monthScans = myMriScans.filter(
+      (scan) => new Date(scan.createdAt) >= thisMonth,
+    );
+
+    // Processing times for completed scans
+    const completedScans = myMriScans.filter(
+      (scan) =>
+        scan.status === 'completed' &&
+        scan.processingStarted &&
+        scan.processingCompleted,
+    );
+
+    const avgProcessingTime = completedScans.length;
+    const assignedDoctors = [
+      ...new Set(myMriScans.map((scan) => scan.doctor?.name).filter(Boolean)),
+    ];
+
+    return {
+      totalScans: myMriScans.length,
+      todayScans: todayScans.length,
+      monthScans: monthScans.length,
+      pendingScans: myMriScans.filter((s) => s.status === 'processing').length,
+      completedScans: myMriScans.filter((s) => s.status === 'completed').length,
+      failedScans: myMriScans.filter((s) => s.status === 'failed').length,
+      avgProcessingTime: Math.round(avgProcessingTime * 10) / 10,
+      assignedDoctors,
+      latestScan:
+        myMriScans.length > 0
+          ? myMriScans.sort(
+              (a, b) =>
+                new Date(b.createdAt).getTime() -
+                new Date(a.createdAt).getTime(),
+            )[0]
+          : null,
+    };
+  }, [myMriScans]);
+
+  // Filter scans based on search and filters
+  const getFilteredScans = useMemo(() => {
+    let filtered = myMriScans;
+
+    // Time filter
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thisMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    switch (timeFilter) {
+      case 'today':
+        filtered = filtered.filter((scan) => new Date(scan.createdAt) >= today);
+        break;
+      case 'week':
+        filtered = filtered.filter(
+          (scan) => new Date(scan.createdAt) >= thisWeek,
+        );
+        break;
+      case 'month':
+        filtered = filtered.filter(
+          (scan) => new Date(scan.createdAt) >= thisMonth,
+        );
+        break;
+      case 'all':
+      default:
+        break;
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((scan) => scan.status === statusFilter);
+    }
+
+    // Search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (scan) =>
+          scan.id.toString().includes(searchLower) ||
+          scan.doctor?.name.toLowerCase().includes(searchLower) ||
+          scan.originalPath?.toLowerCase().includes(searchLower),
+      );
+    }
+
+    return filtered.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [myMriScans, timeFilter, statusFilter, searchTerm]);
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'reviewed':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'pending':
+      case 'processing':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getPriorityBadgeColor = (priority: string) => {
-    switch (priority) {
-      case 'high':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'normal':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'low':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getCommentTypeIcon = (type: string) => {
-    switch (type) {
-      case 'finding':
-        return <Brain className="h-4 w-4 text-blue-600" />;
-      case 'recommendation':
-        return <Heart className="h-4 w-4 text-green-600" />;
-      case 'note':
-        return <FileText className="h-4 w-4 text-purple-600" />;
-      default:
-        return <MessageSquare className="h-4 w-4 text-gray-600" />;
-    }
-  };
-
-  const getAppointmentStatusColor = (status: string) => {
-    switch (status) {
-      case 'scheduled':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'completed':
         return 'bg-green-100 text-green-800 border-green-200';
-      case 'cancelled':
+      case 'failed':
         return 'bg-red-100 text-red-800 border-red-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'processing':
+        return <Clock className="w-3 h-3" />;
+      case 'completed':
+        return <CheckCircle className="w-3 h-3" />;
+      case 'failed':
+        return <AlertCircle className="w-3 h-3" />;
+      default:
+        return <Clock className="w-3 h-3" />;
+    }
+  };
+
+  const VolumeDisplay = ({ volumes }: { volumes: any }) => {
+    if (!volumes)
+      return <span className="text-gray-400">Pending analysis</span>;
+
+    return (
+      <div className="text-sm">
+        <div className="font-medium text-green-600">
+          Total Hippocampus: {volumes.total}
+        </div>
+        <div className="text-xs text-gray-500">
+          Anterior: {volumes.anterior} | Posterior: {volumes.posterior}
+        </div>
+      </div>
+    );
+  };
+
+  const getProcessingDuration = (scan: MriScan) => {
+    if (
+      scan.status === 'completed' &&
+      scan.processingStarted &&
+      scan.processingCompleted
+    ) {
+      const duration =
+        new Date(scan.processingCompleted).getTime() -
+        new Date(scan.processingStarted).getTime();
+      const minutes = Math.round(duration / 1000 / 60);
+      return `${minutes} minutes`;
+    }
+    if (scan.status === 'processing' && scan.processingStarted) {
+      const duration = Date.now() - new Date(scan.processingStarted).getTime();
+      const minutes = Math.round(duration / 1000 / 60);
+      return `${minutes} minutes (ongoing)`;
+    }
+    return '-';
+  };
+
+  if (scansError) {
+    return (
+      <PermissionGuard requiredRoles={['patient']}>
+        <div className="p-6 max-w-7xl mx-auto">
+          <Card className="border-red-200">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+                <h3 className="text-lg font-semibold text-red-700 mb-2">
+                  Error Loading Your Scans
+                </h3>
+                <p className="text-red-600 mb-4">
+                  Failed to load your MRI scan data. Please try again.
+                </p>
+                <Button onClick={() => refetch()}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Retry
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </PermissionGuard>
+    );
+  }
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <User className="h-8 w-8 text-blue-600" />
-            Patient Portal
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Welcome back, {mockPatientInfo.name}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline">
-            <Bell className="h-4 w-4 mr-2" />
-            Notifications
-          </Button>
-          <Button variant="outline">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Button>
-        </div>
-      </div>
-
-      {/* Patient Info Card */}
-      <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-        <CardContent className="pt-6">
-          <div className="flex items-start space-x-4">
-            <Avatar className="h-16 w-16">
-              <AvatarImage src="/placeholder-avatar.jpg" />
-              <AvatarFallback className="text-lg">
-                {mockPatientInfo.name
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold text-blue-900 dark:text-blue-100">
-                    {mockPatientInfo.name}
-                  </h2>
-                  <p className="text-blue-700 dark:text-blue-300">
-                    Patient ID: {mockPatientInfo.id}
-                  </p>
-                </div>
-                <Badge className="bg-green-100 text-green-800 border-green-200">
-                  Active Patient
-                </Badge>
-              </div>
-              <div className="grid md:grid-cols-3 gap-4 mt-4">
-                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
-                  <Stethoscope className="h-4 w-4" />
-                  <span className="text-sm">
-                    Assigned Doctor: {mockPatientInfo.assignedDoctor}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
-                  <Calendar className="h-4 w-4" />
-                  <span className="text-sm">
-                    Next Appointment: {mockPatientInfo.nextAppointment}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
-                  <Mail className="h-4 w-4" />
-                  <span className="text-sm">{mockPatientInfo.email}</span>
-                </div>
-              </div>
-            </div>
+    <PermissionGuard requiredRoles={['patient']}>
+      <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <User className="h-8 w-8 text-blue-600" />
+              Patient Portal
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              Welcome back, {user?.name}
+            </p>
           </div>
-        </CardContent>
-      </Card>
+          <Button variant="outline" onClick={() => refetch()}>
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${scansLoading ? 'animate-spin' : ''}`}
+            />
+            Refresh
+          </Button>
+        </div>
 
-      {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Scans</CardTitle>
-            <Brain className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {mockPatientStats.totalScans}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              All time medical scans
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {mockPatientStats.completedScans}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Scans reviewed by doctor
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Pending Reviews
-            </CardTitle>
-            <Clock className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">
-              {mockPatientStats.pendingReviews}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Awaiting doctor review
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Doctor Comments
-            </CardTitle>
-            <MessageSquare className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600">
-              {mockPatientStats.doctorComments}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Medical comments received
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content Tabs */}
-      <Tabs defaultValue="scans" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="scans">My MRI Scans</TabsTrigger>
-          <TabsTrigger value="comments">Doctor Comments</TabsTrigger>
-          <TabsTrigger value="appointments">Appointments</TabsTrigger>
-          <TabsTrigger value="profile">Health Profile</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="scans" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Brain className="h-5 w-5" />
-                    My MRI Scans
-                  </CardTitle>
-                  <CardDescription>
-                    View your medical imaging history and results
-                  </CardDescription>
+        {/* Profile Card */}
+        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+          <CardContent className="pt-6">
+            <div className="flex items-start space-x-4">
+              <Avatar className="h-16 w-16">
+                <AvatarImage src={user?.avatar || '/placeholder-avatar.jpg'} />
+                <AvatarFallback className="text-lg bg-blue-100 text-blue-700">
+                  {user?.name
+                    ?.split(' ')
+                    .map((n) => n[0])
+                    .join('') || 'P'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-blue-900 dark:text-blue-100">
+                      {user?.name}
+                    </h2>
+                    <p className="text-blue-700 dark:text-blue-300">
+                      Patient ID: {user?.id} | Email: {user?.email}
+                    </p>
+                    <Badge variant="outline" className="mt-1">
+                      {user?.role}
+                    </Badge>
+                  </div>
                 </div>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                  <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                    <Stethoscope className="h-4 w-4" />
+                    <span className="text-sm">
+                      Assigned Doctors:{' '}
+                      {patientStats.assignedDoctors.length > 0
+                        ? patientStats.assignedDoctors.join(', ')
+                        : 'None assigned'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                    <Brain className="h-4 w-4" />
+                    <span className="text-sm">
+                      Total Scans: {patientStats.totalScans}
+                    </span>
+                  </div>
+                  {patientStats.latestScan && (
+                    <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                      <Calendar className="h-4 w-4" />
+                      <span className="text-sm">
+                        Latest:{' '}
+                        {new Date(
+                          patientStats.latestScan.createdAt,
+                        ).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Statistics Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-l-4 border-l-blue-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Scans</CardTitle>
+              <Brain className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">
+                {patientStats.totalScans}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {patientStats.monthScans} this month
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4 border-l-green-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Completed</CardTitle>
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">
+                {patientStats.completedScans}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Analysis completed
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4 border-l-yellow-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Processing</CardTitle>
+              <Activity className="h-4 w-4 text-yellow-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">
+                {patientStats.pendingScans}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Currently analyzing
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4 border-l-purple-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Avg Time</CardTitle>
+              <Clock className="h-4 w-4 text-purple-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">
+                {patientStats.avgProcessingTime}m
+              </div>
+              <p className="text-xs text-muted-foreground">Processing time</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Stats */}
+        {patientStats.completedScans > 0 && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-green-600">
+                      Success Rate
+                    </p>
+                    <p className="text-2xl font-bold">
+                      {Math.round(
+                        (patientStats.completedScans /
+                          patientStats.totalScans) *
+                          100,
+                      )}
+                      %
+                    </p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-green-600 opacity-20" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-blue-600">
+                      Assigned Doctors
+                    </p>
+                    <p className="text-2xl font-bold">
+                      {patientStats.assignedDoctors.length}
+                    </p>
+                  </div>
+                  <Stethoscope className="h-8 w-8 text-blue-600 opacity-20" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* MRI Scans Table */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5" />
+                  My MRI Scans & Hippocampus Analysis
+                </CardTitle>
+                <CardDescription>
+                  View your medical imaging history and AI-powered hippocampus
+                  segmentation results
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={timeFilter} onValueChange={setTimeFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
@@ -422,530 +489,160 @@ const PatientDashboard = () => {
                   />
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Scan Details</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Scan ID</TableHead>
                     <TableHead>Doctor</TableHead>
-                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Hippocampus Volumes</TableHead>
+                    <TableHead>Processing Time</TableHead>
+                    <TableHead>Date</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockMRIScans.map((scan) => (
-                    <TableRow key={scan.id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{scan.title}</div>
-                          <div className="text-sm text-gray-500">
-                            {scan.scanCode}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{scan.scanType}</Badge>
-                      </TableCell>
-                      <TableCell>{scan.scanDate}</TableCell>
-                      <TableCell>
-                        <Badge className={getStatusBadgeColor(scan.status)}>
-                          {scan.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{scan.doctor}</TableCell>
-                      <TableCell>
-                        <Badge className={getPriorityBadgeColor(scan.priority)}>
-                          {scan.priority}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm">
-                            <Eye className="h-4 w-4 mr-1" />
-                            View
-                          </Button>
-                          {scan.hasComments && (
-                            <Button variant="ghost" size="sm">
-                              <MessageSquare className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="sm">
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </div>
+                  {scansLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <RefreshCw className="h-6 w-6 mx-auto mb-2 animate-spin text-blue-600" />
+                        <p className="text-gray-500">
+                          Loading your MRI scans...
+                        </p>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : getFilteredScans.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p className="text-gray-500">
+                          {myMriScans.length === 0
+                            ? 'No MRI scans found. Contact your doctor to upload your scans.'
+                            : 'No scans match your current filters'}
+                        </p>
+                        {(searchTerm ||
+                          statusFilter !== 'all' ||
+                          timeFilter !== 'all') && (
+                          <p className="text-sm text-gray-400">
+                            Try adjusting your filters
+                          </p>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    getFilteredScans.map((scan) => (
+                      <TableRow key={scan.id}>
+                        <TableCell className="font-mono text-sm">
+                          #{scan.id}
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">
+                              {scan.doctor?.name || 'Unknown Doctor'}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              ID: {scan.doctorId}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={getStatusBadgeColor(scan.status)}
+                          >
+                            {getStatusIcon(scan.status)}
+                            <span className="ml-1 capitalize">
+                              {scan.status}
+                            </span>
+                          </Badge>
+                          {scan.status === 'failed' && scan.errorMessage && (
+                            <div
+                              className="text-xs text-red-600 mt-1 max-w-32 truncate"
+                              title={scan.errorMessage}
+                            >
+                              Error: {scan.errorMessage}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <VolumeDisplay volumes={scan.volumes} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {getProcessingDuration(scan)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="text-sm">
+                              {new Date(scan.createdAt).toLocaleDateString()}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(scan.createdAt).toLocaleTimeString()}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href="/viewer">
+                                <Eye className="h-4 w-4" />
+                                <span className="sr-only">View details</span>
+                              </Link>
+                            </Button>
+                            {scan.status === 'completed' &&
+                              scan.resultsJson?.output_files?.report_png && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    // Download report functionality
+                                    const link = document.createElement('a');
+                                    link.href = `/api/v1/mri/${scan.id}/download/report`;
+                                    link.download = `mri-report-${scan.id}.png`;
+                                    link.click();
+                                  }}
+                                >
+                                  <Download className="h-4 w-4" />
+                                  <span className="sr-only">
+                                    Download report
+                                  </span>
+                                </Button>
+                              )}
+                            {scan.status === 'completed' &&
+                              scan.segmentationPath && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    const link = document.createElement('a');
+                                    link.href = `/api/v1/mri/${scan.id}/download/segmentation`;
+                                    link.download = `mri-segmentation-${scan.id}.nii.gz`;
+                                    link.click();
+                                  }}
+                                >
+                                  <FileText className="h-4 w-4" />
+                                  <span className="sr-only">
+                                    Download segmentation
+                                  </span>
+                                </Button>
+                              )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
-
-          {/* Scan Results Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Latest Scan Results
-              </CardTitle>
-              <CardDescription>
-                Summary of your most recent MRI scan
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-start space-x-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                  <div>
-                    <h3 className="font-medium text-green-900">Good News!</h3>
-                    <p className="text-sm text-green-800 mt-1">
-                      Your latest brain MRI scan shows excellent progress. The
-                      previous abnormalities have significantly reduced,
-                      indicating that your treatment is working effectively.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="p-4 border rounded-lg">
-                    <h4 className="font-medium mb-2">Doctor's Findings</h4>
-                    <p className="text-sm text-gray-600">
-                      No significant changes from previous scan. Follow-up
-                      recommended in 6 months.
-                    </p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <h4 className="font-medium mb-2">Recommendations</h4>
-                    <p className="text-sm text-gray-600">
-                      Continue current medication regimen and lifestyle
-                      modifications.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="comments" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                Doctor Comments & Medical Notes
-              </CardTitle>
-              <CardDescription>
-                View comments and feedback from your medical team
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {mockComments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className="border rounded-lg p-4 space-y-3"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="text-xs">
-                            {comment.author
-                              .split(' ')
-                              .map((n) => n[0])
-                              .join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">
-                              {comment.author}
-                            </span>
-                            <Badge variant="outline" className="text-xs">
-                              {comment.role}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-gray-500">
-                            {comment.timestamp}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {getCommentTypeIcon(comment.type)}
-                        <Badge variant="outline" className="capitalize">
-                          {comment.type}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    <div className="pl-11">
-                      <p className="text-sm leading-relaxed">
-                        {comment.content}
-                      </p>
-                    </div>
-
-                    <div className="pl-11 flex items-center gap-2 text-xs text-gray-500">
-                      <span>
-                        Related to scan:{' '}
-                        {
-                          mockMRIScans.find((s) => s.id === comment.scanId)
-                            ?.scanCode
-                        }
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="appointments" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                My Appointments
-              </CardTitle>
-              <CardDescription>
-                Upcoming and past medical appointments
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {mockAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div
-                        className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                          appointment.status === 'scheduled'
-                            ? 'bg-blue-100'
-                            : appointment.status === 'completed'
-                              ? 'bg-green-100'
-                              : 'bg-gray-100'
-                        }`}
-                      >
-                        <Calendar
-                          className={`h-5 w-5 ${
-                            appointment.status === 'scheduled'
-                              ? 'text-blue-600'
-                              : appointment.status === 'completed'
-                                ? 'text-green-600'
-                                : 'text-gray-600'
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <h3 className="font-medium">{appointment.type}</h3>
-                        <p className="text-sm text-gray-600">
-                          {appointment.doctor}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {appointment.notes}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">{appointment.date}</div>
-                      <div className="text-sm text-gray-600">
-                        {appointment.time}
-                      </div>
-                      <Badge
-                        className={getAppointmentStatusColor(
-                          appointment.status,
-                        )}
-                      >
-                        {appointment.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions for Appointments */}
-          <Card className="border-blue-200 bg-blue-50">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-medium text-blue-900">
-                    Need to schedule an appointment?
-                  </h3>
-                  <p className="text-sm text-blue-800 mt-1">
-                    Contact your doctor's office or use our online scheduling
-                    system
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="bg-white">
-                    <Phone className="h-4 w-4 mr-2" />
-                    Call Office
-                  </Button>
-                  <Button variant="outline" className="bg-white">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Schedule Online
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="profile" className="space-y-4">
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Personal Information
-                </CardTitle>
-                <CardDescription>
-                  Your personal and contact details
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4">
-                  <div className="flex items-center gap-3">
-                    <User className="h-4 w-4 text-gray-500" />
-                    <div>
-                      <p className="text-sm font-medium">Full Name</p>
-                      <p className="text-sm text-gray-600">
-                        {mockPatientInfo.name}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Calendar className="h-4 w-4 text-gray-500" />
-                    <div>
-                      <p className="text-sm font-medium">Date of Birth</p>
-                      <p className="text-sm text-gray-600">
-                        {mockPatientInfo.dateOfBirth}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Activity className="h-4 w-4 text-gray-500" />
-                    <div>
-                      <p className="text-sm font-medium">Gender</p>
-                      <p className="text-sm text-gray-600">
-                        {mockPatientInfo.gender}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-gray-500" />
-                    <div>
-                      <p className="text-sm font-medium">Email</p>
-                      <p className="text-sm text-gray-600">
-                        {mockPatientInfo.email}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Phone className="h-4 w-4 text-gray-500" />
-                    <div>
-                      <p className="text-sm font-medium">Phone</p>
-                      <p className="text-sm text-gray-600">
-                        {mockPatientInfo.phone}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <MapPin className="h-4 w-4 text-gray-500" />
-                    <div>
-                      <p className="text-sm font-medium">Address</p>
-                      <p className="text-sm text-gray-600">
-                        {mockPatientInfo.address}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <Button variant="outline" className="w-full">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Update Information
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Heart className="h-5 w-5" />
-                  Medical Information
-                </CardTitle>
-                <CardDescription>
-                  Your medical history and health details
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <h4 className="font-medium mb-2 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-red-500" />
-                    Allergies
-                  </h4>
-                  <div className="space-y-2">
-                    {mockPatientInfo.allergies.map((allergy) => (
-                      <Badge
-                        key={allergy}
-                        variant="outline"
-                        className="mr-2 text-red-600 border-red-200"
-                      >
-                        {allergy}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium mb-2 flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-blue-500" />
-                    Medical History
-                  </h4>
-                  <div className="space-y-2">
-                    {mockPatientInfo.medicalHistory.map((condition) => (
-                      <Badge
-                        key={condition}
-                        variant="outline"
-                        className="mr-2 text-blue-600 border-blue-200"
-                      >
-                        {condition}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium mb-2 flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-green-500" />
-                    Emergency Contact
-                  </h4>
-                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="font-medium text-green-900">
-                      {mockPatientInfo.emergencyContact.name}
-                    </p>
-                    <p className="text-sm text-green-800">
-                      {mockPatientInfo.emergencyContact.relationship}
-                    </p>
-                    <p className="text-sm text-green-700">
-                      {mockPatientInfo.emergencyContact.phone}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Health Tips */}
-          <Card className="border-purple-200 bg-purple-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-purple-900">
-                <BookOpen className="h-5 w-5" />
-                Health Tips & Education
-              </CardTitle>
-              <CardDescription className="text-purple-700">
-                Important information about your health and treatment
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-4 bg-white border border-purple-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Info className="h-4 w-4 text-blue-600" />
-                    <h4 className="font-medium">About Your Condition</h4>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Learn more about your diagnosis and how to manage your
-                    symptoms effectively.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-white border border-purple-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Star className="h-4 w-4 text-yellow-600" />
-                    <h4 className="font-medium">Treatment Guidelines</h4>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Important information about your medication and lifestyle
-                    recommendations.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-white border border-purple-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Shield className="h-4 w-4 text-green-600" />
-                    <h4 className="font-medium">Prevention Tips</h4>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Lifestyle changes and preventive measures to improve your
-                    health outcomes.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-white border border-purple-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Phone className="h-4 w-4 text-red-600" />
-                    <h4 className="font-medium">Emergency Information</h4>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    When to seek immediate medical attention and emergency
-                    contact numbers.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Support Information */}
-      {/* <Card className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
-        <CardContent className="pt-6">
-          <div className="flex items-start space-x-3">
-            <div className="mt-0.5">
-              <div className="h-2 w-2 bg-green-500 rounded-full"></div>
             </div>
-            <div>
-              <p className="font-medium text-green-900 dark:text-green-100">
-                Need Help or Have Questions?
-              </p>
-              <p className="text-sm text-green-800 dark:text-green-200 mt-1">
-                Our patient support team is here to help you understand your
-                results, schedule appointments, and answer any questions about
-                your care. You can also access educational resources and connect
-                with support groups.
-              </p>
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="outline" className="bg-white">
-                  <Phone className="h-4 w-4 mr-2" />
-                  Contact Support
-                </Button>
-                <Button size="sm" variant="outline" className="bg-white">
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Ask Question
-                </Button>
-                <Button size="sm" variant="outline" className="bg-white">
-                  <BookOpen className="h-4 w-4 mr-2" />
-                  Health Resources
-                </Button>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card> */}
-    </div>
+          </CardContent>
+        </Card>
+      </div>
+    </PermissionGuard>
   );
 };
 

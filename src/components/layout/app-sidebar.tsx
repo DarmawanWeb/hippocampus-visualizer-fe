@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  Brain,
-  ChevronRight,
-  ChevronsUpDown,
-  LogOut,
-  User as UserIcon,
-} from 'lucide-react';
+import { Brain, ChevronRight, ChevronsUpDown, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type React from 'react';
@@ -23,7 +17,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-// import { RoleBadge } from '@/components/ui/role-badge';
 import {
   Sidebar,
   SidebarContent,
@@ -54,16 +47,12 @@ let Icons: Record<string, React.ComponentType<{ className?: string }>> | null =
   null;
 try {
   Icons = require('@/components/shared/icons').Icons;
-} catch (error) {
-  // Icons not found, will use default
-}
+} catch (error) {}
 
 let navItems: NavItem[] = [];
 try {
   navItems = require('@/constants/navbar').navItems || [];
-} catch (error) {
-  // Nav items not found, will use empty array
-}
+} catch (error) {}
 
 export const company = {
   name: 'IBrain2U',
@@ -80,11 +69,10 @@ const getIconComponent = (iconName?: string) => {
 
 export default function AppSidebar() {
   const { logout } = useAuthContext();
-  const { user, permissions } = useRBAC();
+  const { user } = useRBAC();
   const pathname = usePathname();
   const { open, isMobile } = useSidebar();
 
-  // Filter nav items based on user role
   const filteredNavItems =
     navItems?.filter((item) => {
       if (!user) return false;
@@ -255,9 +243,9 @@ export default function AppSidebar() {
               {(open || isMobile) && (
                 <>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">Gyh</span>
+                    <span className="truncate font-semibold">{user?.name}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      dokter@test.com
+                      {user?.email}
                     </span>
                   </div>
                   <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0" />
@@ -274,17 +262,12 @@ export default function AppSidebar() {
           >
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">Gyh</p>
+                <p className="text-sm font-medium leading-none">{user?.name}</p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  dokter@test.com
+                  {user?.email}
                 </p>
               </div>
             </DropdownMenuLabel>
-
-            <DropdownMenuItem>
-              <UserIcon className="mr-2 h-4 w-4" />
-              Profile
-            </DropdownMenuItem>
 
             <DropdownMenuItem
               onClick={logout}
@@ -296,8 +279,6 @@ export default function AppSidebar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-
-      {/* <SidebarRail /> */}
     </Sidebar>
   );
 }

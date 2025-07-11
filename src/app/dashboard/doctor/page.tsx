@@ -1,22 +1,21 @@
-// src/app/dashboard/doctor/page.tsx - Doctor Dashboard
 'use client';
 
 import {
   Activity,
   AlertCircle,
   Brain,
-  Calendar,
+  CheckCircle,
   Clock,
+  Download,
   Eye,
   FileText,
-  MessageSquare,
-  Search,
+  RefreshCw,
   Stethoscope,
   TrendingUp,
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,7 +26,13 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { RoleBadge } from '@/components/ui/role-badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -36,118 +41,228 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PermissionGuard } from '@/components/viewer/access-control/permission-guard';
+import {
+  type MriScan,
+  useGetAllMriScans,
+  useGetMriScansByDoctor,
+  useGetMriStatistics,
+} from '@/hooks/queries/use-mri-queries';
 import { useAuth } from '@/hooks/useAuth';
-
-// Mock data untuk doctor dashboard
-const mockDoctorStats = {
-  todayPatients: 12,
-  pendingReviews: 8,
-  completedToday: 15,
-  urgentCases: 3,
-  avgResponseTime: 1.8,
-  patientSatisfaction: 4.7,
-  weeklyStats: {
-    consultations: 67,
-    scansReviewed: 43,
-    reportsGenerated: 28,
-  },
-};
-
-const mockPatients = [
-  {
-    id: 'P001',
-    name: 'Sarah Johnson',
-    age: 34,
-    condition: 'Brain MRI Follow-up',
-    status: 'pending',
-    priority: 'urgent',
-    scheduledTime: '09:00',
-    lastScan: '2024-07-05',
-  },
-  {
-    id: 'P002',
-    name: 'Michael Chen',
-    age: 45,
-    condition: 'Routine Checkup',
-    status: 'completed',
-    priority: 'normal',
-    scheduledTime: '10:30',
-    lastScan: '2024-07-04',
-  },
-  {
-    id: 'P003',
-    name: 'Emily Davis',
-    age: 28,
-    condition: 'Headache Investigation',
-    status: 'in-progress',
-    priority: 'high',
-    scheduledTime: '11:15',
-    lastScan: '2024-07-06',
-  },
-];
-
-const mockRecentScans = [
-  {
-    id: 'MRI001',
-    patientName: 'Sarah Johnson',
-    scanType: 'Brain MRI T1',
-    status: 'pending-review',
-    uploadTime: '2 hours ago',
-    priority: 'urgent',
-  },
-  {
-    id: 'MRI002',
-    patientName: 'David Wilson',
-    scanType: 'Brain MRI T2',
-    status: 'reviewed',
-    uploadTime: '4 hours ago',
-    priority: 'normal',
-  },
-  {
-    id: 'MRI003',
-    patientName: 'Lisa Brown',
-    scanType: 'Brain MRI FLAIR',
-    status: 'pending-review',
-    uploadTime: '6 hours ago',
-    priority: 'high',
-  },
-];
 
 export default function DoctorDashboard() {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [timeFilter, setTimeFilter] = useState<string>('today');
+
+  // API hooks
+  const {
+    data: allMriScans = [],
+    isLoading: scansLoading,
+    error: scansError,
+    refetch,
+  } = useGetAllMriScans();
+
+  const { data: doctorScans = [], isLoading: doctorScansLoading } =
+    useGetMriScansByDoctor(user?.id || 0);
+
+  const { data: statistics } = useGetMriStatistics();
+
+  // Calculate time-based filters
+  const getFilteredScans = useMemo(() => {
+    let filtered = allMriScans;
+
+    // Time filter
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thisMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    switch (timeFilter) {
+      case 'today':
+        filtered = filtered.filter((scan) => new Date(scan.createdAt) >= today);
+        break;
+      case 'week':
+        filtered = filtered.filter(
+          (scan) => new Date(scan.createdAt) >= thisWeek,
+        );
+        break;
+      case 'month':
+        filtered = filtered.filter(
+          (scan) => new Date(scan.createdAt) >= thisMonth,
+        );
+        break;
+      default:
+        // No time filtering
+        break;
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((scan) => scan.status === statusFilter);
+    }
+
+    // Search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (scan) =>
+          scan.id.toString().includes(searchLower) ||
+          scan.patient?.name.toLowerCase().includes(searchLower) ||
+          scan.doctor?.name.toLowerCase().includes(searchLower),
+      );
+    }
+
+    return filtered.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [allMriScans, timeFilter, statusFilter, searchTerm]);
+
+  // Calculate statistics
+  const dashboardStats = useMemo(() => {
+    const today = new Date();
+    const todayStart = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
+
+    // Today's scans
+    const todayScans = allMriScans.filter(
+      (scan) => new Date(scan.createdAt) >= todayStart,
+    );
+
+    // Doctor's scans
+    const myScans = doctorScans;
+    const myTodayScans = myScans.filter(
+      (scan) => new Date(scan.createdAt) >= todayStart,
+    );
+
+    // Processing times for completed scans
+    const completedScans = allMriScans.filter(
+      (scan) =>
+        scan.status === 'completed' &&
+        scan.processingStarted &&
+        scan.processingCompleted,
+    );
+
+    const avgProcessingTime =
+      completedScans.length > 0
+        ? completedScans.reduce((acc, scan) => {
+            if (!scan.processingCompleted || !scan.processingStarted) {
+              return acc;
+            }
+            const duration =
+              new Date(scan.processingCompleted).getTime() -
+              new Date(scan.processingStarted).getTime();
+            return acc + duration;
+          }, 0) /
+          completedScans.length /
+          1000 /
+          60 //
+        : 0;
+
+    return {
+      totalScans: allMriScans.length,
+      todayScans: todayScans.length,
+      myScans: myScans.length,
+      myTodayScans: myTodayScans.length,
+      pendingScans: allMriScans.filter((s) => s.status === 'processing').length,
+      completedScans: allMriScans.filter((s) => s.status === 'completed')
+        .length,
+      failedScans: allMriScans.filter((s) => s.status === 'failed').length,
+      avgProcessingTime: Math.round(avgProcessingTime * 10) / 10,
+      uniquePatients: new Set(allMriScans.map((s) => s.patientId)).size,
+    };
+  }, [allMriScans, doctorScans]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
+      case 'processing':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'completed':
         return 'bg-green-100 text-green-800 border-green-200';
-      case 'in-progress':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'pending-review':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'reviewed':
-        return 'bg-green-100 text-green-800 border-green-200';
+      case 'failed':
+        return 'bg-red-100 text-red-800 border-red-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'high':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'normal':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'processing':
+        return <Clock className="w-3 h-3" />;
+      case 'completed':
+        return <CheckCircle className="w-3 h-3" />;
+      case 'failed':
+        return <AlertCircle className="w-3 h-3" />;
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return <Clock className="w-3 h-3" />;
     }
   };
+
+  const getProcessingDuration = (scan: MriScan) => {
+    if (
+      scan.status === 'completed' &&
+      scan.processingStarted &&
+      scan.processingCompleted
+    ) {
+      const duration =
+        new Date(scan.processingCompleted).getTime() -
+        new Date(scan.processingStarted).getTime();
+      const minutes = Math.round(duration / 1000 / 60);
+      return `${minutes}m`;
+    }
+    if (scan.status === 'processing' && scan.processingStarted) {
+      const duration = Date.now() - new Date(scan.processingStarted).getTime();
+      const minutes = Math.round(duration / 1000 / 60);
+      return `${minutes}m (ongoing)`;
+    }
+    return '-';
+  };
+
+  const VolumeDisplay = ({ volumes }: { volumes: any }) => {
+    if (!volumes) return <span className="text-gray-400">-</span>;
+
+    return (
+      <div className="text-xs">
+        <div className="font-medium">Total: {volumes.total}</div>
+        <div className="text-gray-500">
+          A: {volumes.anterior} | P: {volumes.posterior}
+        </div>
+      </div>
+    );
+  };
+
+  // Error state
+  if (scansError) {
+    return (
+      <PermissionGuard requiredRoles={['doctor']}>
+        <div className="p-6 max-w-7xl mx-auto">
+          <Card className="border-red-200">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <AlertCircle className="h-12 w-12 mx-auto mb-4 text-red-500" />
+                <h3 className="text-lg font-semibold text-red-700 mb-2">
+                  Error Loading Data
+                </h3>
+                <p className="text-red-600 mb-4">
+                  Failed to load MRI scan data. Please try again.
+                </p>
+                <Button onClick={() => refetch()}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Retry
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </PermissionGuard>
+    );
+  }
 
   return (
     <PermissionGuard requiredRoles={['doctor']}>
@@ -160,392 +275,348 @@ export default function DoctorDashboard() {
               Doctor Dashboard
             </h1>
             <p className="text-muted-foreground mt-2">
-              Patient management and medical imaging review
+              Medical imaging analysis and hippocampus segmentation review
             </p>
             <div className="flex items-center gap-2 mt-2">
               <span className="text-sm text-muted-foreground">
                 Welcome back,
               </span>
               <span className="font-medium">{user?.name}</span>
-              <RoleBadge role={user?.role || 'doctor'} />
+              <Badge variant="outline" className="ml-2">
+                {user?.role}
+              </Badge>
             </div>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => refetch()}>
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${scansLoading ? 'animate-spin' : ''}`}
+              />
+              Refresh
+            </Button>
             <Button asChild>
               <Link href="/viewer">
                 <Brain className="h-4 w-4 mr-2" />
                 Medical Viewer
               </Link>
             </Button>
-            <Button variant="outline">
-              <Calendar className="h-4 w-4 mr-2" />
-              Schedule
-            </Button>
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* Statistics Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
+          {/* Total MRI Scans */}
+          <Card className="border-l-4 border-l-blue-500">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Today's Patients
+                Total MRI Scans
               </CardTitle>
-              <Users className="h-4 w-4 text-blue-600" />
+              <Brain className="h-4 w-4 text-blue-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">
-                {mockDoctorStats.todayPatients}
+                {dashboardStats.totalScans}
               </div>
               <p className="text-xs text-muted-foreground">
-                {mockDoctorStats.completedToday} completed
+                {dashboardStats.todayScans} uploaded today
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          {/* My Scans */}
+          <Card className="border-l-4 border-l-green-500">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Pending Reviews
-              </CardTitle>
-              <Brain className="h-4 w-4 text-orange-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
-                {mockDoctorStats.pendingReviews}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                MRI scans awaiting review
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Urgent Cases
-              </CardTitle>
-              <AlertCircle className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {mockDoctorStats.urgentCases}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Require immediate attention
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Avg Response
-              </CardTitle>
-              <Clock className="h-4 w-4 text-green-600" />
+              <CardTitle className="text-sm font-medium">My Scans</CardTitle>
+              <FileText className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                {mockDoctorStats.avgResponseTime}h
+                {dashboardStats.myScans}
               </div>
               <p className="text-xs text-muted-foreground">
-                Average response time
+                {dashboardStats.myTodayScans} today
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Processing Status */}
+          <Card className="border-l-4 border-l-yellow-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Processing</CardTitle>
+              <Activity className="h-4 w-4 text-yellow-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">
+                {dashboardStats.pendingScans}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {dashboardStats.completedScans} completed
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Patients */}
+          <Card className="border-l-4 border-l-purple-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Unique Patients
+              </CardTitle>
+              <Users className="h-4 w-4 text-purple-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">
+                {dashboardStats.uniquePatients}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Avg processing: {dashboardStats.avgProcessingTime}m
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Content Tabs */}
-        <Tabs defaultValue="patients" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="patients">My Patients</TabsTrigger>
-            <TabsTrigger value="scans">Recent Scans</TabsTrigger>
-            <TabsTrigger value="performance">Performance</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="patients" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5" />
-                      Today's Patient Schedule
-                    </CardTitle>
-                    <CardDescription>
-                      Manage your patient appointments and consultations
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search patients..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-8 w-64"
-                      />
-                    </div>
-                    <Button>
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Schedule
-                    </Button>
-                  </div>
+        {/* Quick Stats Row */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-green-600">
+                    Completed Today
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {
+                      allMriScans.filter(
+                        (s) =>
+                          s.status === 'completed' &&
+                          new Date(s.createdAt).toDateString() ===
+                            new Date().toDateString(),
+                      ).length
+                    }
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
+                <CheckCircle className="h-8 w-8 text-green-600 opacity-20" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-red-600">
+                    Failed Scans
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {dashboardStats.failedScans}
+                  </p>
+                </div>
+                <AlertCircle className="h-8 w-8 text-red-600 opacity-20" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-blue-600">
+                    Success Rate
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {dashboardStats.totalScans > 0
+                      ? Math.round(
+                          (dashboardStats.completedScans /
+                            dashboardStats.totalScans) *
+                            100,
+                        )
+                      : 0}
+                    %
+                  </p>
+                </div>
+                <TrendingUp className="h-8 w-8 text-blue-600 opacity-20" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* MRI Scans Table */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-5 w-5" />
+                  MRI Scans & Hippocampus Analysis
+                </CardTitle>
+                <CardDescription>
+                  Review and analyze medical imaging scans with AI-powered
+                  hippocampus segmentation
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={timeFilter} onValueChange={setTimeFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="all">All Time</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  placeholder="Search scans..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-48"
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Scan ID</TableHead>
+                    <TableHead>Patient</TableHead>
+                    <TableHead>Doctor</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Hippocampus Volumes</TableHead>
+                    <TableHead>Processing Time</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {scansLoading ? (
                     <TableRow>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Age</TableHead>
-                      <TableHead>Condition</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <RefreshCw className="h-6 w-6 mx-auto mb-2 animate-spin text-blue-600" />
+                        <p className="text-gray-500">Loading MRI scans...</p>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockPatients.map((patient) => (
-                      <TableRow key={patient.id}>
-                        <TableCell className="font-medium">
+                  ) : getFilteredScans.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p className="text-gray-500">No MRI scans found</p>
+                        {(searchTerm ||
+                          statusFilter !== 'all' ||
+                          timeFilter !== 'all') && (
+                          <p className="text-sm text-gray-400">
+                            Try adjusting your filters
+                          </p>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    getFilteredScans.map((scan) => (
+                      <TableRow key={scan.id}>
+                        <TableCell className="font-mono text-sm">
+                          #{scan.id}
+                        </TableCell>
+                        <TableCell>
                           <div>
-                            <div className="font-semibold">{patient.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              ID: {patient.id}
+                            <div className="font-medium">
+                              {scan.patient?.name || 'Unknown Patient'}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              ID: {scan.patientId}
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell>{patient.age}</TableCell>
-                        <TableCell>{patient.condition}</TableCell>
-                        <TableCell>{patient.scheduledTime}</TableCell>
                         <TableCell>
-                          <Badge className={getPriorityColor(patient.priority)}>
-                            {patient.priority}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(patient.status)}>
-                            {patient.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm" asChild>
-                              <Link href={`/viewer?patient=${patient.id}`}>
-                                <Eye className="h-4 w-4" />
-                              </Link>
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <FileText className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <MessageSquare className="h-4 w-4" />
-                            </Button>
+                          <div>
+                            <div className="font-medium">
+                              {scan.doctor?.name || 'Unknown Doctor'}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              ID: {scan.doctorId}
+                            </div>
                           </div>
                         </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="scans" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Brain className="h-5 w-5" />
-                  Recent MRI Scans
-                </CardTitle>
-                <CardDescription>
-                  Review and analyze recent medical imaging scans
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Scan ID</TableHead>
-                      <TableHead>Patient</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Upload Time</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockRecentScans.map((scan) => (
-                      <TableRow key={scan.id}>
-                        <TableCell className="font-medium">{scan.id}</TableCell>
-                        <TableCell>{scan.patientName}</TableCell>
-                        <TableCell>{scan.scanType}</TableCell>
-                        <TableCell>{scan.uploadTime}</TableCell>
                         <TableCell>
-                          <Badge className={getPriorityColor(scan.priority)}>
-                            {scan.priority}
+                          <Badge
+                            variant="outline"
+                            className={getStatusColor(scan.status)}
+                          >
+                            {getStatusIcon(scan.status)}
+                            <span className="ml-1 capitalize">
+                              {scan.status}
+                            </span>
                           </Badge>
+                          {scan.status === 'failed' && scan.errorMessage && (
+                            <div
+                              className="text-xs text-red-600 mt-1 max-w-32 truncate"
+                              title={scan.errorMessage}
+                            >
+                              {scan.errorMessage}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Badge className={getStatusColor(scan.status)}>
-                            {scan.status}
-                          </Badge>
+                          <VolumeDisplay volumes={scan.volumes} />
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
+                          <div className="text-sm">
+                            {getProcessingDuration(scan)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {new Date(scan.createdAt).toLocaleDateString()}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(scan.createdAt).toLocaleTimeString()}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" asChild></Button>
                             <Button variant="ghost" size="sm" asChild>
                               <Link href={`/viewer?scan=${scan.id}`}>
                                 <Brain className="h-4 w-4" />
                               </Link>
                             </Button>
-                            <Button variant="ghost" size="sm">
-                              <FileText className="h-4 w-4" />
-                            </Button>
+                            {scan.status === 'completed' &&
+                              scan.resultsJson?.output_files && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    // Download report functionality
+                                    const link = document.createElement('a');
+                                    link.href = `/api/v1/mri/${scan.id}/download/report`;
+                                    link.download = `mri-report-${scan.id}.png`;
+                                    link.click();
+                                  }}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              )}
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="performance" className="space-y-4">
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-green-600" />
-                    Weekly Performance
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">Consultations</span>
-                      <span className="text-sm font-medium text-blue-600">
-                        {mockDoctorStats.weeklyStats.consultations}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-blue-100 rounded-full">
-                      <div
-                        className="h-full bg-blue-500 rounded-full"
-                        style={{ width: '85%' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">Scans Reviewed</span>
-                      <span className="text-sm font-medium text-purple-600">
-                        {mockDoctorStats.weeklyStats.scansReviewed}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-purple-100 rounded-full">
-                      <div
-                        className="h-full bg-purple-500 rounded-full"
-                        style={{ width: '70%' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">Reports Generated</span>
-                      <span className="text-sm font-medium text-green-600">
-                        {mockDoctorStats.weeklyStats.reportsGenerated}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-green-100 rounded-full">
-                      <div
-                        className="h-full bg-green-500 rounded-full"
-                        style={{ width: '60%' }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-blue-600" />
-                    Quality Metrics
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-green-600">
-                      {mockDoctorStats.patientSatisfaction}★
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Patient Satisfaction
-                    </p>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-blue-600">
-                      {mockDoctorStats.avgResponseTime}h
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Average Response Time
-                    </p>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-purple-600">
-                      98.5%
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Diagnostic Accuracy
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
-
-        {/* Quick Actions Panel
-        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-          <CardContent className="pt-6">
-            <div className="flex items-start space-x-3">
-              <div className="mt-0.5">
-                <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-              </div>
-              <div>
-                <p className="font-medium text-blue-900 dark:text-blue-100">
-                  Medical Imaging Platform
-                </p>
-                <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
-                  Access advanced medical imaging tools, review MRI scans, add diagnostic comments, 
-                  and collaborate with your medical team using the IBrain2u platform.
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <Button size="sm" variant="outline" className="bg-white" asChild>
-                    <Link href="/viewer">
-                      <Brain className="h-4 w-4 mr-2" />
-                      Open Medical Viewer
-                    </Link>
-                  </Button>
-                  <Button size="sm" variant="outline" className="bg-white">
-                    <FileText className="h-4 w-4 mr-2" />
-                    Generate Report
-                  </Button>
-                  <Button size="sm" variant="outline" className="bg-white">
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Team Chat
-                  </Button>
-                </div>
-              </div>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </div>
           </CardContent>
-        </Card> */}
+        </Card>
       </div>
     </PermissionGuard>
   );

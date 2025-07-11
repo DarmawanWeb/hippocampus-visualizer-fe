@@ -1,9 +1,8 @@
-// app/dashboard/viewer/components/enhanced-medical-viewer.tsx - FINAL FIXED VERSION
+// app/dashboard/viewer/components/enhanced-medical-viewer.tsx - DIRECT LOAD VERSION
 'use client';
 
 import {
   AlertCircle,
-  ArrowLeft,
   Brain,
   Download,
   Hand,
@@ -12,22 +11,18 @@ import {
   Loader2,
   Maximize,
   MessageSquare,
-  Play,
   Plus,
   RotateCcw,
   Share,
   Shield,
-  Upload,
   ZoomIn,
 } from 'lucide-react';
 import type React from 'react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { UserNav } from '@/components/layout/user-nav';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
@@ -106,35 +101,17 @@ const initialComments: Comment[] = [
   },
 ];
 
-const sampleImages: SampleImage[] = [
-  {
-    id: 'mni152',
-    title: 'MNI152 Brain Template',
-    description: 'Standard brain template for neuroimaging',
-    url: 'https://niivue.github.io/niivue/images/mni152.nii.gz',
-    type: 'Anatomical',
-    requiresPermission: false,
-  },
-  {
-    id: 'hippocampus-overlay',
-    title: 'Hippocampus with Segmentation',
-    description: 'Original hippocampus with segmentation overlay',
-    url: '/hippo-ori.nii.gz',
-    overlayUrl: '/hippo-segmentasi.nii.gz',
-    type: 'Overlay Sample',
-    requiresPermission: false,
-  },
-  {
-    id: 'patient-scan',
-    title: 'Patient MRI Scan',
-    description: 'Real patient data - requires medical access',
-    url: '/sample1-ori.nii.gz',
-    overlayUrl: '/sample2.nii.gz',
-    type: 'Patient Data',
-    requiresPermission: true,
-    allowedRoles: ['admin', 'doctor'],
-  },
-];
+// Default sample to load directly
+const defaultSample: SampleImage = {
+  id: 'patient-scan',
+  title: 'Patient MRI Scan',
+  description: 'Real patient data - requires medical access',
+  url: '/sample1-ori.nii.gz',
+  overlayUrl: '/sample2.nii.gz',
+  type: 'Patient Data',
+  requiresPermission: true,
+  allowedRoles: ['admin', 'doctor', 'staff', 'patient'],
+};
 
 const EnhancedMedicalViewer: React.FC = () => {
   // Auth context with RBAC
@@ -163,19 +140,14 @@ const EnhancedMedicalViewer: React.FC = () => {
   };
 
   // Core viewer state
-  const [showViewer, setShowViewer] = useState(false);
   const [isViewerLoading, setIsViewerLoading] = useState(false);
   const [error, setError] = useState('');
   const [isViewerReady, setIsViewerReady] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
-  // Image state
-  const [imageUrl, setImageUrl] = useState('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [overlayUrl, setOverlayUrl] = useState('');
-  const [overlayFile, setOverlayFile] = useState<File | null>(null);
-  const [inputUrl, setInputUrl] = useState('');
-  const [inputOverlayUrl, setInputOverlayUrl] = useState('');
-  const [currentSample, setCurrentSample] = useState('');
+  // Image state - initialized with default sample
+  const [imageUrl, setImageUrl] = useState(defaultSample.url);
+  const [overlayUrl, setOverlayUrl] = useState(defaultSample.overlayUrl || '');
 
   // UI state
   const [showComments, setShowComments] = useState(true);
@@ -198,11 +170,7 @@ const EnhancedMedicalViewer: React.FC = () => {
   >(null);
   const [colormap, setColormap] = useState('gray');
 
-  // File refs
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const overlayFileInputRef = useRef<HTMLInputElement>(null);
-
-  // Check if user can access sample
+  // Check if user can access the default sample
   const canAccessSample = useCallback(
     (sample: SampleImage) => {
       if (!sample.requiresPermission) return true;
@@ -212,98 +180,25 @@ const EnhancedMedicalViewer: React.FC = () => {
     [user],
   );
 
-  // Filtered samples based on permissions
-  const availableSamples = useMemo(() => {
-    return sampleImages.filter(canAccessSample);
-  }, [canAccessSample]);
+  // Check access on component mount and user change
+  useEffect(() => {
+    if (!isLoading && user) {
+      if (!canAccessSample(defaultSample)) {
+        setAccessDenied(true);
+        setError(
+          `Access denied. This scan requires ${defaultSample.allowedRoles?.join(' or ')} privileges.`,
+        );
+      } else {
+        setAccessDenied(false);
+        setError('');
+      }
+    }
+  }, [user, isLoading, canAccessSample]);
 
   // Memoized calculations
-  const hasOverlay = useMemo(
-    () => Boolean(overlayUrl || overlayFile),
-    [overlayUrl, overlayFile],
-  );
+  const hasOverlay = useMemo(() => Boolean(overlayUrl), [overlayUrl]);
 
   // Event handlers
-  const handleLoadImage = useCallback(() => {
-    if (!inputUrl.trim()) return;
-
-    setImageUrl(inputUrl);
-    setImageFile(null);
-
-    if (inputOverlayUrl.trim()) {
-      setOverlayUrl(inputOverlayUrl);
-      setOverlayFile(null);
-    } else {
-      setOverlayUrl('');
-      setOverlayFile(null);
-    }
-
-    setCurrentSample('url-input');
-    setShowViewer(true);
-    setError('');
-  }, [inputUrl, inputOverlayUrl]);
-
-  const handleFileUpload = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-
-      setImageFile(file);
-      setImageUrl('');
-      setCurrentSample('file-upload');
-      setShowViewer(true);
-      setError('');
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    },
-    [],
-  );
-
-  const handleOverlayUpload = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-
-      setOverlayFile(file);
-      setOverlayUrl('');
-
-      if (overlayFileInputRef.current) {
-        overlayFileInputRef.current.value = '';
-      }
-    },
-    [],
-  );
-
-  const loadSampleImage = useCallback(
-    (sample: SampleImage) => {
-      if (!canAccessSample(sample)) {
-        setError("You don't have permission to access this sample");
-        return;
-      }
-
-      setImageUrl(sample.url);
-      setImageFile(null);
-      setInputUrl(sample.url);
-
-      if (sample.overlayUrl) {
-        setOverlayUrl(sample.overlayUrl);
-        setOverlayFile(null);
-        setInputOverlayUrl(sample.overlayUrl);
-      } else {
-        setOverlayUrl('');
-        setOverlayFile(null);
-        setInputOverlayUrl('');
-      }
-
-      setCurrentSample(sample.id);
-      setShowViewer(true);
-      setError('');
-    },
-    [canAccessSample],
-  );
-
   const handleCanvasClick = useCallback(
     (
       event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>,
@@ -342,10 +237,10 @@ const EnhancedMedicalViewer: React.FC = () => {
       const comment: Comment = {
         id: Date.now().toString(),
         author: user.name,
-        authorId: String(user.id), // FIXED: Convert to string
+        authorId: String(user.id),
         role: user.role,
         content,
-        type: type as CommentType, // FIXED: Proper type casting
+        type: type as CommentType,
         position: position
           ? {
               x: position.x,
@@ -390,21 +285,6 @@ const EnhancedMedicalViewer: React.FC = () => {
     setColormap('gray');
     setOverlayOpacity([0.7]);
     setActiveTool(null);
-  }, []);
-
-  const handleBack = useCallback(() => {
-    setShowViewer(false);
-    setImageUrl('');
-    setImageFile(null);
-    setOverlayUrl('');
-    setOverlayFile(null);
-    setCurrentSample('');
-    setError('');
-    setIsViewerLoading(false);
-    setIsViewerReady(false);
-    setActiveTool(null);
-    setIsAddingComment(false);
-    setSelectedPosition(null);
   }, []);
 
   const handleError = useCallback((errorMessage: string) => {
@@ -455,303 +335,50 @@ const EnhancedMedicalViewer: React.FC = () => {
     );
   }
 
-  // Gallery view
-  if (!showViewer) {
+  // Access denied state
+  if (accessDenied) {
     return (
-      <div className="container mx-auto p-6 max-w-6xl">
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <Brain className="h-8 w-8 text-blue-600" />
-              <div>
-                <h1 className="text-3xl font-bold">Enhanced Medical Viewer</h1>
-                <p className="text-muted-foreground">
-                  Advanced medical imaging viewer with role-based access control
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              {user && (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Welcome,
-                  </span>
-                  <span className="font-medium">{user.name}</span>
-                  <RoleBadge role={user.role} />
-                </div>
-              )}
-              <UserNav />
-            </div>
+      <div className="h-screen flex items-center justify-center bg-gray-900">
+        <div className="text-center text-white max-w-md p-6">
+          <Shield className="h-16 w-16 text-red-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
+          <p className="text-gray-300 mb-4">
+            You don't have the required permissions to view this medical scan.
+          </p>
+          <div className="bg-red-900/30 border border-red-600 rounded-lg p-4 mb-6">
+            <p className="text-sm text-red-200">
+              <strong>Required:</strong>{' '}
+              {defaultSample.allowedRoles?.join(' or ')} access
+            </p>
+            <p className="text-sm text-red-200 mt-1">
+              <strong>Your role:</strong> {user?.role || 'None'}
+            </p>
           </div>
-
-          {/* User Permission Info */}
-          <Alert className="mb-6">
-            <Shield className="h-4 w-4" />
-            <AlertDescription>
-              <div className="flex items-center justify-between">
-                <span>
-                  You are logged in as <strong>{user?.role}</strong>.
-                  {permissions.canAddComments
-                    ? ' You can add and edit comments in the viewer.'
-                    : ' You have read-only access to comments.'}
-                </span>
-                <div className="flex gap-2 text-xs">
-                  {permissions.canAddComments && (
-                    <Badge
-                      variant="outline"
-                      className="text-green-600 border-green-600"
-                    >
-                      Can Comment
-                    </Badge>
-                  )}
-                  {permissions.canViewPrivateComments && (
-                    <Badge
-                      variant="outline"
-                      className="text-blue-600 border-blue-600"
-                    >
-                      Private Access
-                    </Badge>
-                  )}
-                  {permissions.canAccessAllPatients && (
-                    <Badge
-                      variant="outline"
-                      className="text-purple-600 border-purple-600"
-                    >
-                      All Patients
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </AlertDescription>
-          </Alert>
+          <div className="flex items-center justify-center gap-4">
+            <RoleBadge role={user?.role || 'patient'} />
+            <span className="text-gray-400">→</span>
+            <span className="text-red-400">Access Required: Doctor/Admin</span>
+          </div>
         </div>
-
-        <div className="grid gap-6 md:grid-cols-2 mb-8">
-          {/* URL Input Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Load from URL
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="base-image-url" className="text-sm font-medium">
-                  Base Image URL
-                </label>
-                <Input
-                  id="base-image-url"
-                  type="url"
-                  value={inputUrl}
-                  onChange={(e) => setInputUrl(e.target.value)}
-                  placeholder="https://example.com/brain.nii.gz"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label
-                  htmlFor="overlay-url"
-                  className="text-sm font-medium flex items-center gap-2"
-                >
-                  <Layers className="h-4 w-4" />
-                  Overlay URL (Optional)
-                </label>
-                <Input
-                  id="overlay-url"
-                  type="url"
-                  value={inputOverlayUrl}
-                  onChange={(e) => setInputOverlayUrl(e.target.value)}
-                  placeholder="https://example.com/segmentation.nii.gz"
-                />
-              </div>
-
-              <Button
-                onClick={handleLoadImage}
-                disabled={!inputUrl.trim()}
-                className="w-full"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                Load {inputOverlayUrl.trim() ? 'with Overlay' : 'Image'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* File Upload Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Upload Files
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".nii,.nii.gz"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-
-              <input
-                ref={overlayFileInputRef}
-                type="file"
-                accept=".nii,.nii.gz"
-                onChange={handleOverlayUpload}
-                className="hidden"
-              />
-
-              <div className="space-y-3">
-                <Button
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Select Base Image
-                  {imageFile && <span className="ml-2 text-green-600">✓</span>}
-                </Button>
-
-                <Button
-                  variant="outline"
-                  onClick={() => overlayFileInputRef.current?.click()}
-                  className="w-full"
-                >
-                  <Layers className="h-4 w-4 mr-2" />
-                  Select Overlay (Optional)
-                  {overlayFile && (
-                    <span className="ml-2 text-green-600">✓</span>
-                  )}
-                </Button>
-              </div>
-
-              {imageFile && (
-                <div className="text-xs text-muted-foreground">
-                  <p>
-                    <strong>Base:</strong> {imageFile.name}
-                  </p>
-                  {overlayFile && (
-                    <p>
-                      <strong>Overlay:</strong> {overlayFile.name}
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sample Gallery */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Sample Images</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-2">
-              {availableSamples.map((sample) => (
-                <button
-                  key={sample.id}
-                  type="button"
-                  className="group p-4 border rounded-lg cursor-pointer hover:border-blue-500 transition-colors text-left w-full"
-                  onClick={() => loadSampleImage(sample)}
-                  aria-label={`Load ${sample.title}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-semibold">{sample.title}</h3>
-                    <div className="flex gap-1">
-                      <Badge variant="outline">{sample.type}</Badge>
-                      {sample.overlayUrl && (
-                        <Badge
-                          variant="outline"
-                          className="text-green-600 border-green-600"
-                        >
-                          Overlay
-                        </Badge>
-                      )}
-                      {sample.requiresPermission && (
-                        <Badge
-                          variant="outline"
-                          className="text-red-600 border-red-600"
-                        >
-                          <Shield className="h-3 w-3 mr-1" />
-                          Protected
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {sample.description}
-                  </p>
-                  <Button size="sm" variant="ghost" className="w-full">
-                    <Play className="h-3 w-3 mr-1" />
-                    View
-                  </Button>
-                </button>
-              ))}
-            </div>
-
-            {/* Show blocked samples for transparency */}
-            {sampleImages.length > availableSamples.length && (
-              <div className="mt-6 pt-6 border-t">
-                <h4 className="font-medium text-muted-foreground mb-3">
-                  Restricted Access (
-                  {sampleImages.length - availableSamples.length} items)
-                </h4>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {sampleImages
-                    .filter((sample) => !canAccessSample(sample))
-                    .map((sample) => (
-                      <div
-                        key={sample.id}
-                        className="p-3 border border-red-200 bg-red-50 rounded-lg opacity-75"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-medium text-red-800">
-                            {sample.title}
-                          </h4>
-                          <Badge
-                            variant="outline"
-                            className="text-red-600 border-red-600"
-                          >
-                            <Shield className="h-3 w-3 mr-1" />
-                            Restricted
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-red-700">
-                          Requires {sample.allowedRoles?.join(' or ')} access
-                        </p>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     );
   }
 
-  // Viewer mode
+  // Main viewer mode (always shown if access is granted)
   return (
     <div className="h-screen flex flex-col bg-gray-900">
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            className="text-white hover:bg-gray-700"
-            onClick={handleBack}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Gallery
-          </Button>
-          <div className="text-white">
-            <h1 className="text-lg font-semibold">{mockScanData.title}</h1>
-            <p className="text-sm text-gray-300">
-              {mockScanData.patientName} • {mockScanData.scanType} •{' '}
-              {mockScanData.scanDate}
-            </p>
+          <div className="flex items-center gap-3">
+            <Brain className="h-8 w-8 text-blue-400" />
+            <div className="text-white">
+              <h1 className="text-lg font-semibold">{mockScanData.title}</h1>
+              <p className="text-sm text-gray-300">
+                {mockScanData.patientName} • {mockScanData.scanType} •{' '}
+                {mockScanData.scanDate}
+              </p>
+            </div>
           </div>
           {hasOverlay && (
             <Badge
@@ -786,7 +413,7 @@ const EnhancedMedicalViewer: React.FC = () => {
       </div>
 
       {/* Error Message */}
-      {error && (
+      {error && !accessDenied && (
         <div className="bg-red-600 text-white p-4 text-center border-b border-red-500 shrink-0">
           <div className="flex items-center justify-center gap-2">
             <AlertCircle className="h-4 w-4" />
@@ -807,7 +434,33 @@ const EnhancedMedicalViewer: React.FC = () => {
         {/* Left Sidebar - Image Controls & Tools */}
         <div className="w-80 bg-gray-800 border-r border-gray-700 p-4 overflow-y-auto">
           <div className="space-y-6">
-            {/* User Info */}
+            {/* Scan Info */}
+            <Card className="bg-gray-700 border-gray-600">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white text-sm flex items-center gap-2">
+                  <Brain className="h-4 w-4" />
+                  Scan Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="text-white text-xs space-y-1">
+                  <div>
+                    <strong>Patient:</strong> {mockScanData.patientName}
+                  </div>
+                  <div>
+                    <strong>Type:</strong> {defaultSample.title}
+                  </div>
+                  <div>
+                    <strong>Date:</strong> {mockScanData.scanDate}
+                  </div>
+                  <div>
+                    <strong>Study ID:</strong> {mockScanData.id}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* User Access Info */}
             <Card className="bg-gray-700 border-gray-600">
               <CardHeader className="pb-3">
                 <CardTitle className="text-white text-sm flex items-center gap-2">
@@ -1093,9 +746,9 @@ const EnhancedMedicalViewer: React.FC = () => {
           >
             <NiiVueViewer
               imageUrl={imageUrl}
-              imageFile={imageFile}
+              imageFile={null}
               overlayUrl={overlayUrl}
-              overlayFile={overlayFile}
+              overlayFile={null}
               onError={handleError}
               onLoading={handleLoading}
               overlayOpacity={overlayOpacity[0]}
@@ -1109,7 +762,7 @@ const EnhancedMedicalViewer: React.FC = () => {
           </button>
 
           {/* Loading State */}
-          {!isViewerReady && (imageUrl || imageFile) && (
+          {!isViewerReady && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
               <div className="text-center text-white">
                 <Brain className="h-12 w-12 animate-pulse mx-auto mb-4" />
@@ -1126,11 +779,11 @@ const EnhancedMedicalViewer: React.FC = () => {
           {/* Comment Markers */}
           {isViewerReady &&
             comments.map((comment) => {
-              // Filter private comments based on permissions - FIXED
+              // Filter private comments based on permissions
               if (
                 comment.isPrivate &&
                 !permissions.canViewPrivateComments &&
-                comment.authorId !== String(user?.id) // FIXED: Convert to string
+                comment.authorId !== String(user?.id)
               ) {
                 return null;
               }
@@ -1247,7 +900,7 @@ const EnhancedMedicalViewer: React.FC = () => {
                     (c) =>
                       !c.isPrivate ||
                       permissions.canViewPrivateComments ||
-                      c.authorId === String(user?.id), // FIXED: Convert to string
+                      c.authorId === String(user?.id),
                   ).length
                 }
               </div>
@@ -1283,7 +936,7 @@ const EnhancedMedicalViewer: React.FC = () => {
                 (c) =>
                   !c.isPrivate ||
                   permissions.canViewPrivateComments ||
-                  c.authorId === String(user?.id), // FIXED: Convert to string
+                  c.authorId === String(user?.id),
               ).length
             }
             )
@@ -1311,7 +964,7 @@ const EnhancedMedicalViewer: React.FC = () => {
                 (c) =>
                   !c.isPrivate ||
                   permissions.canViewPrivateComments ||
-                  c.authorId === String(user?.id), // FIXED: Convert to string
+                  c.authorId === String(user?.id),
               ).length
             }
           </span>
