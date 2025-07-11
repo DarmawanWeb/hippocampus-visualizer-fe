@@ -62,29 +62,28 @@ interface SampleImage {
 // Static data
 const mockScanData = {
   id: 'MRI20240629001',
-  patientName: 'Sarah Johnson',
-  patientCode: 'P000123',
-  scanType: 'T1',
-  scanDate: '2024-06-29',
+  patientName: 'Test Pasien',
+  patientCode: '15',
+  scanType: 'hippocamous',
+  scanDate: '2025-07-11',
   bodyPart: 'Brain',
   title: 'Brain MRI - Follow-up Study',
-  patientId: 'P000123',
+  patientId: '2',
 };
 
 const initialComments: Comment[] = [
   {
     id: '1',
-    author: 'Dr. Robert Smith',
+    author: 'Test Doctor',
     authorId: 'doc001',
     role: 'doctor',
-    content:
-      'Notable hyperintensity in the left temporal region. Consistent with demyelination. Patient should continue current treatment protocol.',
+    content: 'Test Coment',
     type: 'finding',
     position: { x: 128, y: 156, z: 78, slice: 45, view: 'axial' },
-    timestamp: '2024-06-29 14:30',
+    timestamp: '2025-07-10 23:30',
     isPrivate: false,
-    scanId: 'MRI20240629001',
-    patientId: 'P000123',
+    scanId: '15',
+    patientId: '2',
   },
   {
     id: '2',
